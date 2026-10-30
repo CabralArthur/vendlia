@@ -1,0 +1,49 @@
+{
+  "name": "vendlia",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "dev:worker": "tsx watch src/worker/index.ts",
+    "build": "next build",
+    "start": "node scripts/migrate.mjs && next start -p ${PORT:-3000}",
+    "start:worker": "tsx src/worker/index.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "node scripts/migrate.mjs",
+    "seed": "tsx scripts/seed.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "e2e": "tsx scripts/e2e.ts"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "bullmq": "^6.5.1",
+    "clsx": "^2.1.1",
+    "drizzle-orm": "^0.45.4",
+    "ioredis": "^6.0.0",
+    "lucide-react": "^1.64.0",
+    "next": "^16.4.3",
+    "pg": "^8.23.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "server-only": "^0.0.1",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "drizzle-kit": "^0.31.11",
+    "postcss": "^8.5.32",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}

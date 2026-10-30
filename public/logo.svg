@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 260" role="img" aria-labelledby="title desc">
+  <title id="title">Vendlia logo</title>
+  <desc id="desc">Dark green browser icon with mint rising sparkle, followed by the wordmark vendlia.</desc>
+  <g transform="translate(30 36)">
+    <path fill="#102F29" d="M30 0H153Q183 0 183 30V59H46Q20 59 20 85V169H130L110 189H30Q0 189 0 159V30Q0 0 30 0Z"/>
+    <circle cx="30" cy="25" r="8" fill="#F7F8F4"/>
+    <circle cx="55" cy="25" r="8" fill="#F7F8F4"/>
+    <path fill="#39D79B" d="M92 195C120 176 147 141 170 98L183 66V138C191 152 204 160 225 165C203 170 190 184 183 208C174 186 160 174 139 169C155 158 167 145 173 124C153 156 125 181 92 195Z"/>
+  </g>
+  <text x="284" y="193" fill="#102F29" font-family="Inter Display, Inter, Arial, sans-serif" font-size="170" font-weight="750" letter-spacing="-9">vendlia</text>
+  <circle cx="813" cy="176" r="14" fill="#39D79B"/>
+</svg>

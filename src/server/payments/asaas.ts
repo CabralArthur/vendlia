@@ -1,0 +1,125 @@
+import { env } from "../env";
+
+export type AsaasPaymentStatus =
+  | "PENDING"
+  | "RECEIVED"
+  | "CONFIRMED"
+  | "OVERDUE"
+  | "REFUNDED"
+  | "RECEIVED_IN_CASH"
+  | "REFUND_REQUESTED"
+  | "REFUND_IN_PROGRESS"
+  | "CHARGEBACK_REQUESTED"
+  | "CHARGEBACK_DISPUTE"
+  | "AWAITING_CHARGEBACK_REVERSAL"
+  | "DUNNING_REQUESTED"
+  | "DUNNING_RECEIVED"
+  | "AWAITING_RISK_ANALYSIS"
+  | string;
+
+export type AsaasPayment = {
+  id: string;
+  customer: string;
+  subscription?: string | null;
+  value: number;
+  status: AsaasPaymentStatus;
+  invoiceUrl?: string;
+  dueDate?: string;
+  externalReference?: string | null;
+  billingType?: string;
+  paymentDate?: string | null;
+  clientPaymentDate?: string | null;
+};
+
+export const PAID_STATUSES = new Set(["RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH", "DUNNING_RECEIVED"]);
+
+export class AsaasClient {
+  constructor(
+    private baseUrl: string,
+    private apiKey: string,
+    private fetchImpl: typeof fetch = fetch,
+  ) {}
+
+  static configured() {
+    return !!env().ASAAS_API_KEY;
+  }
+
+  static fromEnv(fetchImpl?: typeof fetch) {
+    const e = env();
+    if (!e.ASAAS_API_KEY) throw new Error("ASAAS_API_KEY não configurada");
+    const base = e.ASAAS_ENV === "production" ? "https://api.asaas.com/v3" : "https://api-sandbox.asaas.com/v3";
+    return new AsaasClient(base, e.ASAAS_API_KEY, fetchImpl);
+  }
+
+  private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
+      method,
+      headers: { access_token: this.apiKey, "Content-Type": "application/json", "User-Agent": "Vendlia/1.0" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      let msg = text.slice(0, 400);
+      try {
+        const j = JSON.parse(text) as { errors?: { description: string }[] };
+        if (j.errors?.length) msg = j.errors.map((e) => e.description).join("; ");
+      } catch {}
+      throw new Error(`Asaas ${res.status}: ${msg}`);
+    }
+    return JSON.parse(text) as T;
+  }
+
+  createCustomer(c: { name: string; cpfCnpj: string; email: string; mobilePhone?: string; externalReference?: string }) {
+    return this.call<{ id: string }>("POST", "/customers", { ...c, notificationDisabled: false });
+  }
+
+  createPayment(p: { customer: string; value: number; dueDate: string; description: string; externalReference: string }) {
+    return this.call<AsaasPayment>("POST", "/payments", { ...p, billingType: "UNDEFINED" });
+  }
+
+  createSubscription(s: { customer: string; value: number; nextDueDate: string; description: string; externalReference: string }) {
+    return this.call<{ id: string; nextDueDate: string; status: string }>("POST", "/subscriptions", {
+      ...s,
+      billingType: "UNDEFINED",
+      cycle: "MONTHLY",
+    });
+  }
+
+  getPayment(id: string) {
+    return this.call<AsaasPayment>("GET", `/payments/${encodeURIComponent(id)}`);
+  }
+
+  cancelSubscription(id: string) {
+    return this.call<{ deleted: boolean }>("DELETE", `/subscriptions/${encodeURIComponent(id)}`);
+  }
+}
+
+export function isoDate(d: Date) {
+  return new Date(d.getTime() - 3 * 3600_000).toISOString().slice(0, 10);
+}
+
+export function isValidCpfCnpj(raw: string) {
+  const d = raw.replace(/\D/g, "");
+  if (d.length === 11) {
+    if (/^(\d)\1+$/.test(d)) return false;
+    const calc = (n: number) => {
+      let s = 0;
+      for (let i = 0; i < n; i++) s += Number(d[i]) * (n + 1 - i);
+      const r = (s * 10) % 11;
+      return r === 10 ? 0 : r;
+    };
+    return calc(9) === Number(d[9]) && calc(10) === Number(d[10]);
+  }
+  if (d.length === 14) {
+    if (/^(\d)\1+$/.test(d)) return false;
+    const calc = (n: number) => {
+      const w = n === 12 ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2] : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+      const s = w.reduce((acc, wi, i) => acc + wi * Number(d[i]), 0);
+      const r = s % 11;
+      return r < 2 ? 0 : 11 - r;
+    };
+    return calc(12) === Number(d[12]) && calc(13) === Number(d[13]);
+  }
+  return false;
+}
