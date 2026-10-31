@@ -7,7 +7,7 @@ Achar clientes → gerar o site → entrar em contato pelo WhatsApp → publicar
 | Peça | O que faz |
 |---|---|
 | **web** (Next.js 16) | Painel, webhook do WhatsApp e os sites dos clientes (`/s/<slug>`, subdomínio curinga e domínio próprio via `src/proxy.ts`) |
-| **worker** (BullMQ) | Prospecção, geração de sites, envio de WhatsApp com ritmo controlado, leitura das respostas, follow-ups |
+| **processamento em segundo plano** (BullMQ) | Prospecção, geração de sites, envio de WhatsApp com ritmo controlado, leitura das respostas, follow-ups. Roda dentro do serviço web por padrão |
 | **PostgreSQL** (Drizzle) | Dados; migrations em `drizzle/`, aplicadas no start |
 | **Redis** | Filas, limites de envio e atualização da tela em tempo real |
 | **Evolution API** (serviço separado) | Conecta o WhatsApp por QR code |
@@ -22,8 +22,8 @@ Pagamento fica fora do sistema: combine com o cliente e publique o site no Studi
    - `REDIS_URL=${{Redis.REDIS_URL}}`
    - `APP_URL` = domínio público do serviço (Settings → Networking → Generate Domain), sem barra no final
    - `SESSION_SECRET` = texto longo e aleatório
-3. **Serviço `worker`**: o mesmo repositório de novo; em *Settings → Config-as-code* aponte para `/railway.worker.json`. Mesmas variáveis do web.
-4. **Evolution API** (para o WhatsApp automático): use o template "Evolution API" com a imagem fixada em `evoapicloud/evolution-api:v2.3.7` (a partir da v2.4.0 exige ativação de licença) e volume em `/evolution/instances`. No web **e** no worker:
+3. Não é preciso um serviço `worker`: o serviço web já faz o processamento em segundo plano. (Se preferir separar, crie um serviço com `/railway.worker.json` e defina `WORKER_IN_WEB=false` no web.)
+4. **Evolution API** (para o WhatsApp automático): use o template "Evolution API" com a imagem fixada em `evoapicloud/evolution-api:v2.3.7` (a partir da v2.4.0 exige ativação de licença) e volume em `/evolution/instances`. No serviço web:
    - `EVOLUTION_API_URL` = URL da Evolution (de preferência a interna, ex.: `http://evolution-api.railway.internal:8080`)
    - `EVOLUTION_API_KEY` = o `AUTHENTICATION_API_KEY` da Evolution
 5. Abra o painel, crie sua conta e depois defina `ALLOW_SIGNUP=false`.
@@ -59,7 +59,7 @@ pnpm install
 cp .env.example .env.local
 pnpm db:migrate
 pnpm tsx scripts/evolution-sandbox.ts   # WhatsApp simulado (só dev)
-pnpm dev & pnpm dev:worker
+pnpm dev                              # já inclui o processamento em segundo plano
 pnpm test
 ```
 

@@ -3,7 +3,7 @@ import { normalizeBrPhone, isBrMobile, formatBrPhone } from "@/lib/phone";
 import { normalizeName, slugify } from "@/lib/text";
 import { scoreLead, outreachEligibility } from "@/server/scoring";
 import { classifyByRules } from "@/server/ai/classify";
-import { buildOverpassQuery, mapOsmElements, mapGooglePlaces, parseCsv, mapCsvRows, classifyWebsite } from "@/server/discovery/connectors";
+import { buildOverpassQuery, cityRegex, mapOsmElements, mapGooglePlaces, parseCsv, mapCsvRows, classifyWebsite } from "@/server/discovery/connectors";
 import { buildRuleContent, copyIsGrounded } from "@/server/ai/sitecopy";
 import { brPhoneVariants, effectiveDailyLimit, inBusinessHours, nextBusinessOpening, renderTemplate } from "@/server/whatsapp/limits";
 import { extractText, resolveJid } from "@/server/whatsapp/evolution";
@@ -88,8 +88,16 @@ describe("connectors", () => {
   const p = { city: "Recife", state: "PE", segment: "barbearia" as const };
   it("builds an Overpass query scoped to the city", () => {
     const q = buildOverpassQuery(p);
-    expect(q).toContain('area["name"="Recife"]');
+    expect(q).toContain('area["ISO3166-2"="BR-PE"]');
+    expect(q).toContain('"name"~"^r[eéèê][cç][iíì]f[eéèê]$",i');
     expect(q).toContain('nwr["shop"="hairdresser"]');
+  });
+  it("matches city names without accents or case", () => {
+    const re = new RegExp(cityRegex("sao paulo"), "i");
+    expect(re.test("São Paulo")).toBe(true);
+    expect(re.test("SÃO PAULO")).toBe(true);
+    expect(re.test("São Paulo de Olivença")).toBe(false);
+    expect(new RegExp(cityRegex("Jaboatao dos Guararapes"), "i").test("Jaboatão dos Guararapes")).toBe(true);
   });
   it("maps OSM elements", () => {
     const c = mapOsmElements(

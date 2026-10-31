@@ -32,12 +32,29 @@ export type DiscoveryParams = { city: string; state: string; segment: SegmentId;
 /* ----------------------------- OpenStreetMap ----------------------------- */
 // Data © OpenStreetMap contributors, ODbL 1.0 — storage and reuse allowed with attribution.
 
+const ACCENTS: Record<string, string> = { a: "aáàâã", e: "eéèê", i: "iíì", o: "oóòôõ", u: "uúùü", c: "cç" };
+
+/** Regex that matches the city name ignoring case and accents ("sao paulo" → São Paulo). */
+export function cityRegex(city: string) {
+  const base = city.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ");
+  const body = [...base]
+    .map((ch) => {
+      if (ACCENTS[ch]) return `[${ACCENTS[ch]}]`;
+      if (/[a-z0-9 ]/.test(ch)) return ch;
+      return "\\" + ch; // escape regex metacharacters (e.g. "-", "'", ".")
+    })
+    .join("");
+  return `^${body}$`;
+}
+
 export function buildOverpassQuery(p: DiscoveryParams) {
   const seg = segmentById(p.segment);
-  const city = p.city.replace(/"/g, "");
+  const uf = p.state.trim().toUpperCase().replace(/[^A-Z]/g, "");
   const parts = seg.osm.map((f) => `nwr${f}(area.a);`).join("\n  ");
   return `[out:json][timeout:90];
-area["name"="${city}"]["boundary"="administrative"]["admin_level"="8"]->.a;
+area["ISO3166-2"="BR-${uf}"]["admin_level"="4"]->.uf;
+rel(area.uf)["boundary"="administrative"]["admin_level"="8"]["name"~"${cityRegex(p.city)}",i];
+map_to_area->.a;
 (
   ${parts}
 );
@@ -86,16 +103,36 @@ export function mapOsmElements(elements: OsmElement[], p: DiscoveryParams): Cand
   return out;
 }
 
+const OVERPASS_MIRRORS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.private.coffee/api/interpreter"];
+
+/** Queries Overpass, falling back across public mirrors when one is busy (429/5xx/timeouts). */
 export async function fetchOsm(p: DiscoveryParams, fetchImpl: typeof fetch = fetch): Promise<Candidate[]> {
-  const res = await fetchImpl(env().OVERPASS_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Vendlia/1.0 (prospecção B2B)" },
-    body: "data=" + encodeURIComponent(buildOverpassQuery(p)),
-    signal: AbortSignal.timeout(120_000),
-  });
-  if (!res.ok) throw new Error(`Overpass respondeu ${res.status}`);
-  const json = (await res.json()) as { elements?: OsmElement[] };
-  return mapOsmElements(json.elements ?? [], p);
+  const body = "data=" + encodeURIComponent(buildOverpassQuery(p));
+  const urls = [...new Set([env().OVERPASS_URL, ...OVERPASS_MIRRORS])];
+  const errors: string[] = [];
+  for (const url of urls) {
+    try {
+      const res = await fetchImpl(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json", "User-Agent": "Vendlia/1.0 (prospeccao B2B; contato via app)" },
+        body,
+        signal: AbortSignal.timeout(100_000),
+      });
+      if (!res.ok) {
+        errors.push(`${new URL(url).host}: HTTP ${res.status}`);
+        continue;
+      }
+      const json = (await res.json()) as { elements?: OsmElement[]; remark?: string };
+      if (json.remark && /runtime error|timed out|out of memory/i.test(json.remark) && !json.elements?.length) {
+        errors.push(`${new URL(url).host}: ${json.remark.slice(0, 120)}`);
+        continue;
+      }
+      return mapOsmElements(json.elements ?? [], p);
+    } catch (e) {
+      errors.push(`${new URL(url).host}: ${e instanceof Error ? e.message : String(e)}`.slice(0, 160));
+    }
+  }
+  throw new Error(`OpenStreetMap indisponível no momento (${errors.join("; ")}). Tente de novo em alguns minutos.`);
 }
 
 /* --------------------------- Google Places (New) -------------------------- */

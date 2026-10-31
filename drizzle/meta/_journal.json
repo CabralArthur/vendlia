@@ -15,6 +15,13 @@
       "when": 1793405080568,
       "tag": "0001_demo_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793418708283,
+      "tag": "0002_purge_demo_data",
+      "breakpoints": true
     }
   ]
 }

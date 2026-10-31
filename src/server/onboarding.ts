@@ -95,21 +95,3 @@ export async function getSetupProgress(orgId: string): Promise<{ steps: SetupSte
   const req = steps.filter((s) => !s.optional);
   return { steps, done: req.filter((s) => s.done).length, required: req.length };
 }
-
-export type DemoRefs = { hasDemo: boolean; leadId?: string; siteId?: string; conversationId?: string };
-
-export async function getDemoRefs(orgId: string): Promise<DemoRefs> {
-  const [lead] = await db
-    .select({ id: leads.id })
-    .from(leads)
-    .innerJoin(businesses, eq(businesses.id, leads.businessId))
-    .where(and(eq(leads.orgId, orgId), eq(businesses.isDemo, true), eq(leads.stage, "interested")))
-    .limit(1);
-  const [any] = lead ? [lead] : await db.select({ id: businesses.id }).from(businesses).where(and(eq(businesses.orgId, orgId), eq(businesses.isDemo, true))).limit(1);
-  if (!any) return { hasDemo: false };
-  if (!lead) return { hasDemo: true };
-  const [site] = await db.select({ id: websites.id }).from(websites).where(eq(websites.leadId, lead.id)).orderBy(asc(websites.createdAt)).limit(1);
-  const [conv] = await db.select({ id: conversations.id }).from(conversations).where(eq(conversations.leadId, lead.id)).limit(1);
-  return { hasDemo: true, leadId: lead.id, siteId: site?.id, conversationId: conv?.id };
-}
-

@@ -1,11 +1,8 @@
 import Link from "next/link";
 import { requireSession } from "@/server/auth";
 import { getSetupProgress } from "@/server/onboarding";
-import { hasDemoData } from "@/server/demo";
 import { Notice, PageHeader } from "@/components/ui";
 import { Flash } from "@/components/flash";
-import { Submit } from "@/components/submit";
-import { removeDemoAction } from "../_actions/onboarding";
 import { CheckCircle2, ArrowLeft, ArrowRight, Lock, Zap } from "lucide-react";
 
 export const metadata = { title: "Como funciona" };
@@ -69,7 +66,7 @@ const GUIDE: Record<string, Guide> = {
 export default async function OnboardingPage({ searchParams }: { searchParams: Promise<{ step?: string; ok?: string; err?: string }> }) {
   const s = await requireSession();
   const sp = await searchParams;
-  const [progress, demo] = await Promise.all([getSetupProgress(s.orgId), hasDemoData(s.orgId)]);
+  const progress = await getSetupProgress(s.orgId);
   const steps = progress.steps;
   const firstPending = Math.max(0, steps.findIndex((x) => !x.done));
   const requested = Number(sp.step);
@@ -82,18 +79,6 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
     <>
       <PageHeader title="Como funciona" subtitle={`Passo a passo para começar a vender · ${steps.filter((x) => x.done).length} de ${steps.length} concluídos`} />
       <Flash sp={sp} />
-      {demo && (
-        <div className="mb-5">
-          <Notice tone="warn">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span>Há dados de exemplo de uma versão anterior misturados aos seus.</span>
-              <form action={removeDemoAction}>
-                <Submit className="btn btn-ghost !py-1 text-xs" confirm="Remover os dados de exemplo? Seus dados reais não serão afetados.">Remover exemplos</Submit>
-              </form>
-            </div>
-          </Notice>
-        </div>
-      )}
       {allDone && <div className="mb-5"><Notice tone="ok">Tudo configurado. Agora é repetir: achar clientes, gerar sites, entrar em contato e fechar.</Notice></div>}
 
       <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
