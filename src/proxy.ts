@@ -20,8 +20,9 @@ export function proxy(req: NextRequest) {
     host.endsWith(".up.railway.app") ||
     host.endsWith(".railway.internal") ||
     !host;
-  if (isApp) return NextResponse.next();
   const { pathname } = req.nextUrl;
+  // Health checks (Railway probes with its own Host) and webhooks must work on any host.
+  if (isApp || pathname.startsWith("/api/")) return NextResponse.next();
   if (pathname.startsWith("/_next") || pathname === "/favicon.ico" || pathname === "/icon.svg" || pathname === "/robots.txt") return NextResponse.next();
   if (pathname === "/" || pathname === "") {
     const url = req.nextUrl.clone();
