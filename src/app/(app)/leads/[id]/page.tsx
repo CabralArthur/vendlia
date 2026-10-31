@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { requireSession } from "@/server/auth";
-import { db, leads, businesses, businessSources, contactPoints, leadEvents, websites, proposals, products, payments, conversations, messages, suppressionList, LEAD_STAGES, TEMPLATES } from "@/server/db";
+import { db, leads, businesses, businessSources, contactPoints, leadEvents, websites, conversations, messages, suppressionList, LEAD_STAGES, TEMPLATES } from "@/server/db";
 import { Badge, Card, Field, Notice, PageHeader, ScorePill, StageBadge, STAGE_LABEL, timeAgo } from "@/components/ui";
 import { Flash } from "@/components/flash";
 import { Submit } from "@/components/submit";
@@ -10,12 +10,10 @@ import { SEGMENTS } from "@/server/discovery/segments";
 import { outreachEligibility } from "@/server/scoring";
 import { getOrgSettings } from "@/server/org";
 import { previewUrl } from "@/server/whatsapp/service";
-import { proposalUrl } from "@/server/commerce";
-import { formatBRL } from "@/lib/text";
 import { formatBrPhone } from "@/lib/phone";
 import { addNote, generatePreview, sendOutreach, setContactPermission, setLeadStageAction, updateBusiness } from "../../_actions/leads";
-import { cancelProposalAction, createProposalAction, followUpNow, markPaidAction } from "../../_actions/commerce";
-import { ExternalLink, MessageCircle, Sparkles, Send, FileText } from "lucide-react";
+import { followUpNow } from "../../_actions/sites";
+import { ExternalLink, MessageCircle, Sparkles, Send } from "lucide-react";
 
 const TEMPLATE_LABEL: Record<string, string> = { barber: "Barbearia / Salão", aesthetics: "Estética / Clínica", food: "Restaurante / Café", auto: "Oficina", services: "Serviços" };
 
@@ -27,13 +25,11 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   if (!row) notFound();
   const { lead, b } = row;
 
-  const [sources, contacts, events, [site], props, prods, convs, settings] = await Promise.all([
+  const [sources, contacts, events, [site], convs, settings] = await Promise.all([
     db.select().from(businessSources).where(eq(businessSources.businessId, b.id)),
     db.select().from(contactPoints).where(eq(contactPoints.businessId, b.id)),
     db.select().from(leadEvents).where(eq(leadEvents.leadId, lead.id)).orderBy(desc(leadEvents.createdAt)).limit(60),
     db.select().from(websites).where(eq(websites.leadId, lead.id)).orderBy(desc(websites.createdAt)).limit(1),
-    db.select({ p: proposals, product: products.name }).from(proposals).innerJoin(products, eq(products.id, proposals.productId)).where(eq(proposals.leadId, lead.id)).orderBy(desc(proposals.createdAt)),
-    db.select().from(products).where(and(eq(products.orgId, s.orgId), eq(products.active, true))).orderBy(asc(products.setupPriceCents)),
     db.select().from(conversations).where(eq(conversations.leadId, lead.id)),
     getOrgSettings(s.orgId),
   ]);
@@ -52,7 +48,6 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
     allowColdOutreach: settings.allowColdOutreach,
     hasPreview: !!site,
   });
-  const propPayments = props.length ? await db.select().from(payments).where(inArray(payments.proposalId, props.map((x) => x.p.id))) : [];
 
   return (
     <>
@@ -220,58 +215,6 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             ))}
           </Card>
 
-          <Card tour="proposal" title={<span id="proposta" className="inline-flex items-center gap-2"><FileText size={15} /> Proposta</span>}>
-            <form action={createProposalAction} className="space-y-3">
-              <input type="hidden" name="leadId" value={lead.id} />
-              <Field label="Plano">
-                <select className="field" name="productId" required>
-                  {prods.map((p) => <option key={p.id} value={p.id}>{p.name} — {formatBRL(p.setupPriceCents)} + {formatBRL(p.monthlyPriceCents)}/mês</option>)}
-                </select>
-              </Field>
-              <div className="grid grid-cols-2 gap-2">
-                <Field label="Implantação (R$)" hint="Vazio = preço do plano"><input className="field" name="setup" inputMode="decimal" placeholder="497,00" /></Field>
-                <Field label="Mensalidade (R$)"><input className="field" name="monthly" inputMode="decimal" placeholder="79,00" /></Field>
-              </div>
-              <Field label="Observações para o cliente"><textarea className="field min-h-14" name="notes" /></Field>
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="send" defaultChecked={convs.length > 0} className="accent-[#39D79B]" /> Enviar link no WhatsApp</label>
-              <Submit className="btn btn-dark w-full">Criar proposta</Submit>
-            </form>
-            {props.length > 0 && (
-              <ul className="mt-4 space-y-2 border-t border-[var(--line)] pt-4">
-                {props.map(({ p, product }) => {
-                  const pays = propPayments.filter((x) => x.proposalId === p.id);
-                  return (
-                    <li key={p.id} className="rounded-lg border border-[var(--line)] p-3 text-sm">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold">{product}</span>
-                        <Badge tone={p.status === "paid" ? "green" : p.status === "canceled" || p.status === "expired" ? "red" : "amber"}>{p.status}</Badge>
-                      </div>
-                      <div className="muted text-xs">{formatBRL(p.setupPriceCents)} + {formatBRL(p.monthlyPriceCents)}/mês · {timeAgo(p.createdAt)}{p.clientApprovedContentAt ? " · conteúdo aprovado" : ""}</div>
-                      <div className="mt-1 break-all text-xs"><a className="underline" href={proposalUrl(p.token)} target="_blank" rel="noreferrer">{proposalUrl(p.token)}</a></div>
-                      {pays.map((x) => <div key={x.id} className="muted text-xs">• {x.kind} {formatBRL(x.amountCents)} — {x.status}</div>)}
-                      {!["paid", "canceled", "expired"].includes(p.status) && (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {s.role !== "operator" && (
-                            <form action={markPaidAction} className="flex flex-1 gap-1">
-                              <input type="hidden" name="leadId" value={lead.id} />
-                              <input type="hidden" name="proposalId" value={p.id} />
-                              <input className="field !py-1 text-xs" name="note" placeholder="Pix recebido? ID/comprovante" />
-                              <Submit className="btn btn-ghost !py-1 text-xs" confirm="Confirmar que o pagamento foi recebido fora do gateway?">Marcar pago</Submit>
-                            </form>
-                          )}
-                          <form action={cancelProposalAction}>
-                            <input type="hidden" name="leadId" value={lead.id} />
-                            <input type="hidden" name="proposalId" value={p.id} />
-                            <Submit className="btn btn-danger !py-1 text-xs">Cancelar</Submit>
-                          </form>
-                        </div>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </Card>
         </div>
       </div>
     </>

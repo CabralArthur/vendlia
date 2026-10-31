@@ -115,14 +115,11 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <Card title={<span id="integracoes">Integrações</span>}>
             <ul className="divide-y divide-[var(--line)] text-sm">
               <Status ok={evoReady} label="WhatsApp (Evolution API)" />
-              <Status ok={!!e.ASAAS_API_KEY} label={`Pagamentos Asaas (${e.ASAAS_ENV})`} />
-              <Status ok={!!e.ASAAS_WEBHOOK_TOKEN} label="Webhook do Asaas" />
               <Status ok={llmConfigured()} label={`IA (${e.LLM_PROVIDER})`} />
               <Status ok={!!e.GOOGLE_PLACES_API_KEY} label="Google Places (opcional)" />
               <Status ok={!!e.SITES_BASE_DOMAIN} label="Domínio dos sites" />
             </ul>
             <div className="mt-4 space-y-2 text-xs">
-              <div><div className="font-semibold">Webhook Asaas (cole no painel do Asaas)</div><code className="block break-all rounded bg-[var(--panel-2)] p-2">{base}/api/webhooks/asaas</code></div>
               <div><div className="font-semibold">Webhook Evolution (configurado automaticamente)</div><code className="block break-all rounded bg-[var(--panel-2)] p-2">{base}/api/webhooks/evolution</code></div>
             </div>
           </Card>

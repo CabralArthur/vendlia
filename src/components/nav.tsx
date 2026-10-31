@@ -1,17 +1,14 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Users, Columns3, Radar, MessagesSquare, Wallet, Settings, Bell, Compass } from "lucide-react";
+import { LayoutDashboard, Users, Radar, MessagesSquare, Settings, Compass } from "lucide-react";
 
 const items = [
   { href: "/onboarding", label: "Como funciona", icon: Compass },
   { href: "/dashboard", label: "Visão geral", icon: LayoutDashboard },
-  { href: "/inbox", label: "Inbox", icon: MessagesSquare, badgeKey: "inbox" },
-  { href: "/leads", label: "Leads", icon: Users },
-  { href: "/pipeline", label: "Pipeline", icon: Columns3 },
   { href: "/discovery", label: "Prospecção", icon: Radar },
-  { href: "/finance", label: "Financeiro", icon: Wallet },
-  { href: "/notifications", label: "Notificações", icon: Bell, badgeKey: "notifications" },
+  { href: "/leads", label: "Leads", icon: Users },
+  { href: "/inbox", label: "Inbox", icon: MessagesSquare, badgeKey: "inbox" },
   { href: "/settings", label: "Configurações", icon: Settings },
 ];
 

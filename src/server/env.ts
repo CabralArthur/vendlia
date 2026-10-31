@@ -25,10 +25,6 @@ const schema = z.object({
   OVERPASS_URL: z.string().default("https://overpass-api.de/api/interpreter"),
   BRASILAPI_URL: z.string().default("https://brasilapi.com.br/api"),
 
-  // Payments (Asaas)
-  ASAAS_API_KEY: z.string().optional(),
-  ASAAS_ENV: z.enum(["sandbox", "production"]).default("sandbox"),
-  ASAAS_WEBHOOK_TOKEN: z.string().optional(),
 });
 
 export type Env = z.infer<typeof schema>;

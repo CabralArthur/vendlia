@@ -1,62 +1,14 @@
 "use server";
-import { and, desc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { requireSession, requireRole } from "@/server/auth";
+import { requireSession } from "@/server/auth";
 import { act, str } from "@/server/action";
-import { db, conversations, leads, proposals, websites, products, TEMPLATES, type SiteContent } from "@/server/db";
-import { createProposal, markSetupPaidManually, proposalUrl, publishWebsite, unpublishWebsite } from "@/server/commerce";
-import { queueReply, queueOutreach } from "@/server/whatsapp/service";
+import { db, leads, websites, TEMPLATES, type SiteContent } from "@/server/db";
+import { publishWebsite, unpublishWebsite } from "@/server/sites/publish";
+import { queueOutreach } from "@/server/whatsapp/service";
 import { rollbackSite, saveSiteEdit } from "@/server/sites/service";
-import { formatBRL } from "@/lib/text";
 import { audit } from "@/server/events";
 
-const cents = (v: string) => Math.round(Number(v.replace(/\./g, "").replace(",", ".")) * 100);
-
-export async function createProposalAction(fd: FormData) {
-  const s = await requireSession();
-  const leadId = str(fd, "leadId");
-  return act(`/leads/${leadId}`, async () => {
-    const setup = str(fd, "setup");
-    const monthly = str(fd, "monthly");
-    const p = await createProposal(
-      s.orgId,
-      {
-        leadId,
-        productId: str(fd, "productId"),
-        setupPriceCents: setup ? cents(setup) : undefined,
-        monthlyPriceCents: monthly ? cents(monthly) : undefined,
-        notes: str(fd, "notes"),
-      },
-      s.userId,
-    );
-    if (fd.get("send") === "on") {
-      const [conv] = await db.select().from(conversations).where(and(eq(conversations.leadId, leadId), eq(conversations.orgId, s.orgId))).orderBy(desc(conversations.lastMessageAt)).limit(1);
-      if (!conv) return `Proposta criada, mas não há conversa no WhatsApp. Link: ${proposalUrl(p.token)}`;
-      const r = await queueReply(s.orgId, conv.id, `Segue a proposta do seu site, com a demonstração e o link de pagamento:\n${proposalUrl(p.token)}\n\nImplantação: ${formatBRL(p.setupPriceCents)} • Mensalidade: ${formatBRL(p.monthlyPriceCents)}`, "human", s.userId);
-      if (!r.ok) throw new Error(r.reason);
-      return "Proposta criada e enviada no WhatsApp.";
-    }
-    return `Proposta criada: ${proposalUrl(p.token)}`;
-  });
-}
-
-export async function markPaidAction(fd: FormData) {
-  const s = await requireRole("owner", "admin");
-  const leadId = str(fd, "leadId");
-  return act(`/leads/${leadId}`, async () => {
-    await markSetupPaidManually(s.orgId, str(fd, "proposalId"), s.userId, str(fd, "note"));
-    return "Pagamento registrado.";
-  });
-}
-
-export async function cancelProposalAction(fd: FormData) {
-  const s = await requireSession();
-  const leadId = str(fd, "leadId");
-  return act(`/leads/${leadId}`, async () => {
-    await db.update(proposals).set({ status: "canceled" }).where(and(eq(proposals.id, str(fd, "proposalId")), eq(proposals.orgId, s.orgId)));
-    return "Proposta cancelada.";
-  });
-}
 
 const lines = (v: string) => v.split("\n").map((x) => x.trim()).filter(Boolean);
 
@@ -112,9 +64,7 @@ export async function publishAction(fd: FormData) {
   const s = await requireSession();
   const siteId = str(fd, "siteId");
   return act(`/studio/${siteId}`, async () => {
-    const reason = str(fd, "overrideReason");
-    if (reason && s.role === "operator") throw new Error("Apenas owner/admin pode publicar com aprovação externa.");
-    await publishWebsite(s.orgId, siteId, s.userId, reason ? { reason } : undefined);
+    await publishWebsite(s.orgId, siteId, s.userId);
     return "Site publicado.";
   });
 }
@@ -137,25 +87,6 @@ export async function setDomainAction(fd: FormData) {
     await db.update(websites).set({ customDomain: d || null }).where(and(eq(websites.id, siteId), eq(websites.orgId, s.orgId)));
     await audit(s.orgId, s.userId, "site.domain", siteId, { domain: d });
     return d ? `Domínio salvo. Agora adicione ${d} no Railway e aponte o DNS (veja instruções abaixo).` : "Domínio removido.";
-  });
-}
-
-export async function saveProductAction(fd: FormData) {
-  const s = await requireRole("owner", "admin");
-  return act("/finance", async () => {
-    const id = str(fd, "productId");
-    const data = {
-      name: str(fd, "name"),
-      description: str(fd, "description"),
-      features: lines(str(fd, "features")),
-      setupPriceCents: cents(str(fd, "setup")),
-      monthlyPriceCents: cents(str(fd, "monthly")),
-      active: fd.get("active") === "on",
-    };
-    if (!data.name || Number.isNaN(data.setupPriceCents) || Number.isNaN(data.monthlyPriceCents)) throw new Error("Preencha nome e valores.");
-    if (id) await db.update(products).set(data).where(and(eq(products.id, id), eq(products.orgId, s.orgId)));
-    else await db.insert(products).values({ ...data, orgId: s.orgId });
-    return "Plano salvo.";
   });
 }
 

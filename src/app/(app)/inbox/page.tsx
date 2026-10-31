@@ -169,7 +169,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                   <div className="muted text-xs">{[active.b.neighborhood, active.b.city].filter(Boolean).join(", ")}</div>
                   <div className="mt-2"><StageBadge stage={active.lead.stage} /></div>
                   {site && <a href={previewUrl(site)} target="_blank" rel="noreferrer" className="mt-3 block text-xs font-semibold underline">Ver demonstração enviada ↗</a>}
-                  <Link href={`/leads/${active.lead.id}#proposta`} className="btn btn-dark mt-3 w-full">Criar proposta</Link>
+                  <Link href={`/leads/${active.lead.id}`} className="btn btn-dark mt-3 w-full">Abrir lead</Link>
                 </Card>
               )}
               <div className="grid gap-2">

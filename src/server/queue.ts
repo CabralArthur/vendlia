@@ -6,7 +6,6 @@ export const QUEUES = {
   sites: "sites",
   outbound: "whatsapp-outbound",
   inbound: "whatsapp-inbound",
-  payments: "payments",
   maintenance: "maintenance",
 } as const;
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];

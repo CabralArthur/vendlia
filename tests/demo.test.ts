@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { and, eq, like } from "drizzle-orm";
-import { db, organizations, users, memberships, businesses, leads, websites, conversations, messages, notifications, proposals, subscriptions, suppressionList, whatsappInstances } from "@/server/db";
-import { defaultOrgSettings, seedOrgDefaults } from "@/server/org";
+import { db, organizations, users, memberships, businesses, leads, websites, conversations, messages, notifications, suppressionList, whatsappInstances } from "@/server/db";
+import { defaultOrgSettings } from "@/server/org";
 import { seedDemo, removeDemo, hasDemoData } from "@/server/demo";
 import { getDemoRefs, getSetupProgress } from "@/server/onboarding";
 import { ingestCandidates } from "@/server/discovery/ingest";
@@ -18,7 +18,6 @@ beforeAll(async () => {
   const [o] = await db.insert(organizations).values({ name: "Org", slug: "org-demo", settings: defaultOrgSettings() }).returning();
   orgId = o!.id;
   await db.insert(memberships).values({ userId, orgId, role: "owner" });
-  await seedOrgDefaults(db, orgId);
   // One real business that must survive demo removal.
   await ingestCandidates(orgId, [{ source: "manual", externalId: "real-1", license: "manual", payload: {}, name: "Barbearia Real", segment: "barbearia", phone: "81 98765-4321", city: "Recife", state: "PE" }]);
 });
@@ -36,8 +35,6 @@ describe("demo data", () => {
     expect(stages).toContain("do_not_contact");
     const [pub] = await db.select().from(websites).where(and(eq(websites.orgId, orgId), eq(websites.status, "published")));
     expect(pub).toBeTruthy();
-    const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.orgId, orgId));
-    expect(sub!.status).toBe("active");
     const conv = await db.select().from(conversations).where(eq(conversations.state, "HUMAN_REQUESTED"));
     expect(conv).toHaveLength(1);
     const refs = await getDemoRefs(orgId);
@@ -64,7 +61,7 @@ describe("demo data", () => {
     expect(by.leads).toBe(true); // the real business
     expect(by.preview).toBe(false);
     expect(by.contact).toBe(false);
-    expect(by.sale).toBe(false);
+    expect(by.publish).toBe(false);
     expect(by.whatsapp).toBe(false);
   });
 
@@ -74,8 +71,7 @@ describe("demo data", () => {
     expect(await hasDemoData(orgId)).toBe(false);
     expect(await db.select().from(whatsappInstances).where(like(whatsappInstances.name, "demo-%"))).toHaveLength(0);
     expect(await db.select().from(conversations)).toHaveLength(0);
-    expect(await db.select().from(proposals)).toHaveLength(0);
-    expect(await db.select().from(subscriptions)).toHaveLength(0);
+    expect(await db.select().from(websites).where(eq(websites.orgId, orgId))).toHaveLength(0);
     expect(await db.select().from(suppressionList)).toHaveLength(0);
     expect(await db.select().from(notifications).where(eq(notifications.orgId, orgId))).toHaveLength(0);
     const real = await db.select().from(businesses).where(eq(businesses.orgId, orgId));

@@ -12,22 +12,18 @@ import {
   conversations,
   messages,
   notifications,
-  proposals,
-  payments,
-  subscriptions,
   suppressionList,
-  products,
   contactPoints,
   providerEvents,
   intentClassifications,
 } from "@/server/db";
-import { defaultOrgSettings, seedOrgDefaults } from "@/server/org";
+import { defaultOrgSettings } from "@/server/org";
 import { ingestCandidates } from "@/server/discovery/ingest";
 import { mapOsmElements } from "@/server/discovery/connectors";
 import { generateSiteForLead } from "@/server/sites/service";
 import { EvolutionClient } from "@/server/whatsapp/evolution";
 import { intakeEvolutionWebhook, processProviderEvent, queueOutreach, queueReply, sendQueuedMessage } from "@/server/whatsapp/service";
-import { approveContent, checkoutProposal, createProposal, intakeAsaasWebhook, processAsaasEvent, publishWebsite } from "@/server/commerce";
+import { publishWebsite } from "@/server/sites/publish";
 import { resetDb, stubFetch } from "./helpers";
 
 const MONDAY_10AM = new Date("2026-11-02T13:00:00Z");
@@ -75,7 +71,6 @@ beforeAll(async () => {
   const [o] = await db.insert(organizations).values({ name: "Vendlia", slug: "vendlia", settings: defaultOrgSettings() }).returning();
   orgId = o!.id;
   await db.insert(memberships).values({ userId, orgId, role: "owner" });
-  await seedOrgDefaults(db, orgId);
   const [o2] = await db.insert(organizations).values({ name: "Outra", slug: "outra", settings: defaultOrgSettings() }).returning();
   otherOrgId = o2!.id;
   instanceToken = "tok-" + "a".repeat(30);
@@ -218,88 +213,17 @@ describe("whatsapp outreach → reply → handoff", () => {
   });
 });
 
-describe("proposal → checkout → payment → publish", () => {
-  let token: string;
-  const asaas = stubFetch({
-    "POST /v3/customers": () => ({ id: "cus_1" }),
-    "POST /v3/payments": (_u, init: any) => ({ id: "pay_setup", customer: "cus_1", value: init.body.value, status: "PENDING", invoiceUrl: "https://sandbox.asaas.com/i/pay_setup", dueDate: init.body.dueDate }),
-    "POST /v3/subscriptions": (_u, init: any) => ({ id: "sub_1", nextDueDate: init.body.nextDueDate, status: "ACTIVE" }),
-    "GET /v3/payments/pay_setup": () => ({ id: "pay_setup", customer: "cus_1", value: 497, status: "CONFIRMED" }),
-    "GET /v3/payments/pay_m1": () => ({ id: "pay_m1", customer: "cus_1", subscription: "sub_1", value: 79, status: "OVERDUE", dueDate: "2026-12-02" }),
-  });
-
-  it("creates a proposal and cancels conflicting ones", async () => {
-    const [prod] = await db.select().from(products).where(eq(products.orgId, orgId)).orderBy(products.setupPriceCents);
-    await createProposal(orgId, { leadId, productId: prod!.id }, userId);
-    const p = await createProposal(orgId, { leadId, productId: prod!.id, setupPriceCents: 45000 }, userId);
-    token = p.token;
-    const all = await db.select().from(proposals).where(eq(proposals.leadId, leadId));
-    expect(all.filter((x) => x.status === "canceled")).toHaveLength(1);
-    expect(p.setupPriceCents).toBe(45000);
-  });
-
-  it("validates checkout input", async () => {
-    await expect(checkoutProposal(token, { name: "Zé", document: "123", email: "a@b.co", approveContent: false, acceptTerms: true }, asaas.fetch)).rejects.toThrow(/CPF/);
-    await expect(checkoutProposal(token, { name: "José da Silva", document: "52998224725", email: "a@b.co", approveContent: false, acceptTerms: false }, asaas.fetch)).rejects.toThrow();
-  });
-
-  it("creates customer, setup charge and subscription at the gateway", async () => {
-    const r = await checkoutProposal(token, { name: "José da Silva", document: "529.982.247-25", email: "ze@barbearia.com", approveContent: false, acceptTerms: true }, asaas.fetch);
-    expect(r.redirectUrl).toBe("https://sandbox.asaas.com/i/pay_setup");
-    const payCall = asaas.calls.find((c) => c.url.endsWith("/v3/payments") && c.method === "POST")!;
-    expect(payCall.body.value).toBe(450);
-    expect(payCall.headers.access_token).toBe("asaas-test-key");
-    const subCall = asaas.calls.find((c) => c.url.endsWith("/v3/subscriptions"))!;
-    expect(subCall.body.cycle).toBe("MONTHLY");
-    // Re-submitting returns the same charge instead of creating another.
-    const again = await checkoutProposal(token, { name: "José da Silva", document: "52998224725", email: "ze@barbearia.com", approveContent: false, acceptTerms: true }, asaas.fetch);
-    expect(again.redirectUrl).toBe(r.redirectUrl);
-    expect(asaas.calls.filter((c) => c.url.endsWith("/v3/payments") && c.method === "POST")).toHaveLength(1);
-  });
-
-  it("does not publish before payment", async () => {
-    const [p] = await db.select().from(proposals).where(eq(proposals.token, token));
-    await expect(publishWebsite(orgId, p!.websiteId!, userId)).rejects.toThrow(/pagamento/);
-  });
-
-  it("confirms payment only via authenticated webhook + provider re-check", async () => {
-    const body = { id: "evt_1", event: "PAYMENT_CONFIRMED", payment: { id: "pay_setup", customer: "cus_1", value: 450, status: "CONFIRMED" } };
-    expect((await intakeAsaasWebhook("bad", body)).status).toBe(401);
-    const ok = await intakeAsaasWebhook("asaas-webhook-token-123456789012345", body);
-    expect(ok.status).toBe(200);
-    expect((await intakeAsaasWebhook("asaas-webhook-token-123456789012345", body)).body).toBe("duplicado");
-    const [ev] = await db.select().from(providerEvents).where(eq(providerEvents.eventId, "evt_1"));
-    await processAsaasEvent(ev!.id, asaas.fetch);
-    expect(asaas.calls.some((c) => c.url.endsWith("/v3/payments/pay_setup") && c.method === "GET")).toBe(true);
-    const [p] = await db.select().from(proposals).where(eq(proposals.token, token));
-    expect(p!.status).toBe("paid");
+describe("publish", () => {
+  it("publishes the approved site and closes the lead", async () => {
+    const [w] = await db.select().from(websites).where(eq(websites.leadId, leadId));
+    await publishWebsite(orgId, w!.id, userId);
+    const [after] = await db.select().from(websites).where(eq(websites.id, w!.id));
+    expect(after!.status).toBe("published");
+    expect(after!.publishedVersion).toBe(after!.version);
+    expect(after!.content.pendingReview).toEqual([]);
     const [l] = await db.select().from(leads).where(eq(leads.id, leadId));
     expect(l!.stage).toBe("won");
-    const [pay] = await db.select().from(payments).where(eq(payments.providerPaymentId, "pay_setup"));
-    expect(pay!.status).toBe("confirmed");
-    const [w] = await db.select().from(websites).where(eq(websites.id, p!.websiteId!));
-    expect(w!.status).toBe("preview"); // still waiting for content approval
-  });
-
-  it("publishes automatically once the client approves the content", async () => {
-    await approveContent(token);
-    const [p] = await db.select().from(proposals).where(eq(proposals.token, token));
-    const [w] = await db.select().from(websites).where(eq(websites.id, p!.websiteId!));
-    expect(w!.status).toBe("published");
-    expect(w!.publishedVersion).toBe(w!.version);
-    expect(w!.content.pendingReview).toEqual([]);
-  });
-
-  it("tracks overdue monthly charges from the subscription", async () => {
-    const body = { id: "evt_2", event: "PAYMENT_OVERDUE", payment: { id: "pay_m1", customer: "cus_1", subscription: "sub_1", value: 79, status: "OVERDUE" } };
-    await intakeAsaasWebhook("asaas-webhook-token-123456789012345", body);
-    const [ev] = await db.select().from(providerEvents).where(eq(providerEvents.eventId, "evt_2"));
-    await processAsaasEvent(ev!.id, asaas.fetch);
-    const [m] = await db.select().from(payments).where(eq(payments.providerPaymentId, "pay_m1"));
-    expect(m!.kind).toBe("monthly");
-    expect(m!.status).toBe("overdue");
-    const [s] = await db.select().from(subscriptions).where(eq(subscriptions.providerSubscriptionId, "sub_1"));
-    expect(s!.status).toBe("overdue");
+    await expect(publishWebsite(otherOrgId, w!.id, userId)).rejects.toThrow();
   });
 });
 

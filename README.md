@@ -1,75 +1,70 @@
 # Vendlia
 
-Prospecção → demonstração de site → WhatsApp → handoff humano → proposta → pagamento → site publicado com mensalidade.
+Achar clientes → gerar o site → entrar em contato pelo WhatsApp → publicar quando o cliente fechar.
 
 ## Arquitetura
 
 | Peça | O que faz |
 |---|---|
-| **web** (Next.js 16, App Router) | Painel, server actions, webhooks, renderer multi-tenant dos sites (`/s/<slug>`, subdomínio curinga e domínio próprio via `src/proxy.ts`), página pública de proposta/checkout |
-| **worker** (BullMQ) | Prospecção, geração de sites, envio de WhatsApp com ritmo controlado, processamento de mensagens recebidas, pagamentos, follow-ups, rotinas de manutenção |
-| **PostgreSQL** (Drizzle ORM) | Dados, migrations versionadas em `drizzle/` (aplicadas no start com advisory lock) |
-| **Redis** | Filas, limites de envio, tempo real (pub/sub → SSE no painel) |
-| **Evolution API** (serviço separado) | Conexão do WhatsApp por QR code |
-| **Asaas** | Pix/boleto/cartão + assinatura mensal |
+| **web** (Next.js 16) | Painel, webhook do WhatsApp e os sites dos clientes (`/s/<slug>`, subdomínio curinga e domínio próprio via `src/proxy.ts`) |
+| **worker** (BullMQ) | Prospecção, geração de sites, envio de WhatsApp com ritmo controlado, leitura das respostas, follow-ups |
+| **PostgreSQL** (Drizzle) | Dados; migrations em `drizzle/`, aplicadas no start |
+| **Redis** | Filas, limites de envio e atualização da tela em tempo real |
+| **Evolution API** (serviço separado) | Conecta o WhatsApp por QR code |
 
-Decisões: um único app Next.js no lugar de Next + NestJS (menos serviços, mesmo código de domínio no web e no worker); Drizzle no lugar de Prisma (sem binários de engine, build mais simples); IA opcional — sem chave, classificação e textos usam regras determinísticas que nunca inventam fatos.
+Pagamento fica fora do sistema: combine com o cliente e publique o site no Studio quando ele aprovar.
 
-## Deploy no Railway (≈20 min)
+## Deploy no Railway
 
-1. Suba este repositório para o GitHub.
-2. No Railway, crie um projeto e adicione **PostgreSQL** e **Redis**.
-3. **Serviço `web`**: *New → GitHub Repo* → este repositório. Variáveis (veja `.env.example`):
-   - `DATABASE_URL=${{Postgres.DATABASE_URL}}`, `REDIS_URL=${{Redis.REDIS_URL}}`
-   - `APP_URL` = domínio público do serviço (Settings → Networking → Generate Domain), `SESSION_SECRET`
-4. **Serviço `worker`**: adicione o mesmo repositório de novo. Em *Settings → Config-as-code*, aponte para `/railway.worker.json`. Copie as mesmas variáveis do web.
-5. **Evolution API**: *New → Template* → "Evolution API" (fixe a imagem em `evoapicloud/evolution-api:v2.3.7` — a partir da v2.4.0 exige ativação de licença). Monte o volume em `/evolution/instances`. Coloque no web e no worker:
-   - `EVOLUTION_API_URL` (de preferência a URL interna `http://<serviço>.railway.internal:8080`)
-   - `EVOLUTION_API_KEY` = `AUTHENTICATION_API_KEY` da Evolution
-6. **Asaas**: crie a chave de API (comece em sandbox: `ASAAS_ENV=sandbox`). No painel Asaas → Integrações → Webhooks, cadastre `https://<APP_URL>/api/webhooks/asaas` com um *token de autenticação* (32+ caracteres) e eventos de cobrança e assinatura. Use o mesmo valor em `ASAAS_WEBHOOK_TOKEN`.
-7. **Sites dos clientes** (opcional, recomendado): no serviço web adicione o domínio curinga `*.sites.seudominio.com.br` e defina `SITES_BASE_DOMAIN=sites.seudominio.com.br`. Domínio próprio de um cliente: adicione-o como Custom Domain no serviço web e salve no Studio do site.
-8. Abra o painel, crie sua conta, depois defina `ALLOW_SIGNUP=false`.
-9. Configurações → **Conectar número** → escaneie o QR com o WhatsApp do chip comercial.
+1. No projeto do Railway, adicione **PostgreSQL** e **Redis**.
+2. **Serviço `web`**: *New → GitHub Repo* → este repositório. Variáveis:
+   - `DATABASE_URL=${{Postgres.DATABASE_URL}}`
+   - `REDIS_URL=${{Redis.REDIS_URL}}`
+   - `APP_URL` = domínio público do serviço (Settings → Networking → Generate Domain), sem barra no final
+   - `SESSION_SECRET` = texto longo e aleatório
+3. **Serviço `worker`**: o mesmo repositório de novo; em *Settings → Config-as-code* aponte para `/railway.worker.json`. Mesmas variáveis do web.
+4. **Evolution API** (para o WhatsApp automático): use o template "Evolution API" com a imagem fixada em `evoapicloud/evolution-api:v2.3.7` (a partir da v2.4.0 exige ativação de licença) e volume em `/evolution/instances`. No web **e** no worker:
+   - `EVOLUTION_API_URL` = URL da Evolution (de preferência a interna, ex.: `http://evolution-api.railway.internal:8080`)
+   - `EVOLUTION_API_KEY` = o `AUTHENTICATION_API_KEY` da Evolution
+5. Abra o painel, crie sua conta e depois defina `ALLOW_SIGNUP=false`.
+6. Configurações → **Conectar número** → escaneie o QR com o WhatsApp do chip comercial.
 
-Health check: `GET /api/health` (banco, Redis e heartbeat do worker).
+Opcionais: `SITES_BASE_DOMAIN` (sites em `<slug>.sites.seudominio.com.br`, com domínio curinga no serviço web), `GOOGLE_PLACES_API_KEY` (prospecção pelo Google), `LLM_PROVIDER` + chave (textos e leitura de mensagens por IA; sem chave usa regras).
+
+Health check: `GET /api/health`.
 
 ## Primeiro acesso
 
-Depois de criar a conta você cai em **Como funciona** (`/onboarding`):
+Depois de criar a conta você cai em **Como funciona**:
 
-- **Carregar dados de exemplo**: 7 empresas fictícias, uma conversa “Aguardando humano”, uma venda fechada com site publicado e um opt-out. Nada disso envia mensagens ou gera cobranças (bloqueado no código e coberto por testes). Remova com um clique; seus dados reais não são tocados.
-- **Tour guiado**: 10 passos que navegam pelas telas e destacam o que importa em cada uma.
-- **Checklist “Para começar a vender”**: progresso real (os exemplos não contam), com o que falta configurar.
+- **Dados de exemplo**: empresas fictícias, sites gerados, uma conversa “Aguardando humano”, um site publicado e um opt-out. Nunca enviam mensagens. Remova com um clique.
+- **Tour guiado** pelas telas.
+- **Checklist** com o seu progresso real.
 
-## Operação diária
+## Operação
 
-1. **Prospecção** → cidade + segmento (OpenStreetMap grátis; Google Places se tiver chave) ou CSV.
-2. **Leads** → ordenados por score explicável. Confirme ausência de site, selecione e “Gerar demonstrações”.
-3. **Enviar 1º contato** → enfileirado; sai em horário comercial (seg–sáb), com aquecimento do número (10/dia subindo 5/dia), limite por hora e intervalo aleatório de 1–4 min.
-4. Resposta chega → classificada → se houver interesse/preço/compra, a conversa vai para **Aguardando humano**, a automação para, e você recebe alerta (painel, notificação do navegador e, se configurado, no seu WhatsApp).
-5. **Inbox** → assumir → responder → **Criar proposta** (link enviado no WhatsApp).
-6. Cliente abre a proposta → preenche CPF/CNPJ → paga no Asaas → webhook confirma (com reconsulta ao Asaas) → lead vira **Fechado**.
-7. Cliente aprova o conteúdo → site publicado automaticamente. Mensalidade em atraso por 15 dias suspende o site.
+1. **Prospecção** → cidade + segmento (OpenStreetMap grátis; Google com chave), CSV ou cadastro manual.
+2. **Leads** → ordenados por nota. Selecione e “Gerar demonstrações”.
+3. **Enviar 1º contato** → sai em horário comercial (seg–sáb), com aquecimento do número (10/dia subindo 5/dia), limite por hora e intervalo de 1–4 min. Um follow-up após 48h sem resposta.
+4. Resposta com interesse → a automação para, a conversa fica “Aguardando humano” e aparece um alerta na tela.
+5. **Inbox** → assumir → conversar → combinar preço e pagamento.
+6. **Studio** → ajustar o site → **Publicar**. O lead vira “Fechado”.
 
-“SAIR”/“parar” bloqueia o número na hora, cancela envios pendentes e manda uma única confirmação.
+“SAIR”/“parar” bloqueia o número na hora e cancela envios pendentes.
 
 ## Desenvolvimento local
 
 ```bash
 pnpm install
-cp .env.example .env.local   # aponte para Postgres/Redis locais
+cp .env.example .env.local
 pnpm db:migrate
 pnpm tsx scripts/evolution-sandbox.ts   # WhatsApp simulado (só dev)
 pnpm dev & pnpm dev:worker
-pnpm test                               # unitários + fluxo completo contra Postgres/Redis reais
+pnpm test
 ```
 
-Com `EVOLUTION_API_URL=http://localhost:8089`, `EVOLUTION_API_KEY=sandbox-key` e `DEV_IGNORE_BUSINESS_HOURS=true` (ignorado em produção) é possível rodar o fluxo inteiro. Para simular a resposta de um lead:
-`curl -XPOST localhost:8089/_simulate -d '{"from":"5581999998888","text":"Quanto fica?"}'`
+## Riscos
 
-## Riscos que continuam sendo seus
-
-- **WhatsApp não oficial**: a Evolution API viola os termos do WhatsApp; volume frio leva a banimento. Use chips dedicados, mantenha limites baixos e mensagens personalizadas.
-- **LGPD**: o sistema registra origem dos dados, consentimento e opt-out, mas a base legal (legítimo interesse) é avaliação sua.
-- **Google Places**: dados (exceto o place_id) ficam no máximo 30 dias; leads nunca trabalhados são apagados automaticamente.
-- **Marca/registro**: verifique “Vendlia” no INPI e o domínio no Registro.br antes de investir na marca.
+- **WhatsApp não oficial**: a Evolution API viola os termos do WhatsApp; envio frio em volume leva a banimento. Use chip dedicado e limites baixos.
+- **LGPD**: o sistema registra origem dos dados e opt-out, mas a base legal é avaliação sua.
+- **Google Places**: dados (exceto o ID) ficam no máximo 30 dias; leads não trabalhados são apagados automaticamente.

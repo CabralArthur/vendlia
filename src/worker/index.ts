@@ -6,7 +6,6 @@ import { db, pool, messages } from "../server/db";
 import { runDiscovery, purgeExpiredSourceData } from "../server/discovery/run";
 import { generateSiteForLead } from "../server/sites/service";
 import { processProviderEvent, queueDueFollowUps, sendQueuedMessage, syncInstances } from "../server/whatsapp/service";
-import { processAsaasEvent, suspendOverdueSites } from "../server/commerce";
 
 const log = (msg: string, extra?: unknown) =>
   console.log(JSON.stringify({ t: new Date().toISOString(), svc: "worker", msg, ...(extra ? { extra } : {}) }));
@@ -24,7 +23,6 @@ function make(name: string, concurrency: number, fn: (job: Job, token?: string) 
 make(QUEUES.discovery, 2, async (job) => runDiscovery(job.data.runId));
 make(QUEUES.sites, 3, async (job) => generateSiteForLead(job.data.orgId, job.data.leadId, { template: job.data.template }));
 make(QUEUES.inbound, 5, async (job) => processProviderEvent(job.data.providerEventId));
-make(QUEUES.payments, 2, async (job) => processAsaasEvent(job.data.providerEventId));
 
 // Outbound uses concurrency 1 per process to keep pacing deterministic.
 make(QUEUES.outbound, 1, async (job, token) => {
@@ -42,8 +40,6 @@ make(QUEUES.maintenance, 1, async (job) => {
       return { queued: await queueDueFollowUps() };
     case "sync-instances":
       return syncInstances();
-    case "billing":
-      return { suspended: await suspendOverdueSites() };
     case "purge-sources":
       return { purged: await purgeExpiredSourceData() };
     case "requeue-stuck": {
@@ -69,7 +65,7 @@ async function schedule() {
   await q.upsertJobScheduler("followups", { pattern: "15 * * * *" }, { name: "followups", opts });
   await q.upsertJobScheduler("sync-instances", { every: 5 * 60_000 }, { name: "sync-instances", opts });
   await q.upsertJobScheduler("requeue-stuck", { every: 10 * 60_000 }, { name: "requeue-stuck", opts });
-  await q.upsertJobScheduler("billing", { pattern: "0 12 * * *" }, { name: "billing", opts });
+  await q.removeJobScheduler("billing").catch(() => {}); // removed feature (older deploys)
   await q.upsertJobScheduler("purge-sources", { pattern: "30 6 * * *" }, { name: "purge-sources", opts });
   await redis().set("vendlia:worker:heartbeat", Date.now().toString(), "EX", 180);
 }

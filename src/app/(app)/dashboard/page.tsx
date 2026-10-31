@@ -1,10 +1,9 @@
 import Link from "next/link";
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { requireSession } from "@/server/auth";
-import { db, leads, websites, subscriptions, payments, conversations, businesses, messages, whatsappInstances, discoveryRuns, usageRecords, LEAD_STAGES } from "@/server/db";
+import { db, leads, websites, conversations, businesses, messages, whatsappInstances, usageRecords, LEAD_STAGES } from "@/server/db";
 import { Card, PageHeader, Stat, STAGE_LABEL, timeAgo, Badge } from "@/components/ui";
 import { Flash } from "@/components/flash";
-import { formatBRL } from "@/lib/text";
 import { getSetupProgress } from "@/server/onboarding";
 import { isDemoInstance } from "@/lib/demo";
 import { llmConfigured } from "@/server/ai/llm";
@@ -20,12 +19,9 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   monthStart.setUTCHours(3, 0, 0, 0);
   const dayStart = new Date(Date.now() - ((Date.now() - 3 * 3600_000) % 86400_000));
 
-  const [stageRows, [previews], [mrr], [received], [pending], hot, [sentToday], instances, [runs], [aiSpend]] = await Promise.all([
+  const [stageRows, [previews], hot, [sentToday], instances, [aiSpend]] = await Promise.all([
     db.select({ stage: leads.stage, n: sql<number>`count(*)::int` }).from(leads).where(eq(leads.orgId, s.orgId)).groupBy(leads.stage),
     db.select({ n: sql<number>`count(*)::int` }).from(websites).where(eq(websites.orgId, s.orgId)),
-    db.select({ v: sql<number>`coalesce(sum(${subscriptions.amountCents}),0)::int`, n: sql<number>`count(*)::int` }).from(subscriptions).where(and(eq(subscriptions.orgId, s.orgId), inArray(subscriptions.status, ["active", "overdue"]))),
-    db.select({ v: sql<number>`coalesce(sum(${payments.amountCents}),0)::int` }).from(payments).where(and(eq(payments.orgId, s.orgId), eq(payments.status, "confirmed"), gte(payments.paidAt, monthStart))),
-    db.select({ v: sql<number>`coalesce(sum(${payments.amountCents}),0)::int` }).from(payments).where(and(eq(payments.orgId, s.orgId), eq(payments.status, "pending"))),
     db
       .select({ c: conversations, name: businesses.name, city: businesses.city })
       .from(conversations)
@@ -36,7 +32,6 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       .limit(6),
     db.select({ n: sql<number>`count(*)::int` }).from(messages).where(and(eq(messages.orgId, s.orgId), inArray(messages.kind, ["outreach", "followup"]), gte(messages.sentAt, dayStart))),
     db.select().from(whatsappInstances).where(eq(whatsappInstances.orgId, s.orgId)),
-    db.select({ n: sql<number>`count(*)::int` }).from(discoveryRuns).where(eq(discoveryRuns.orgId, s.orgId)),
     db.select({ v: sql<number>`coalesce(sum(${usageRecords.costMicros}),0)::int` }).from(usageRecords).where(and(eq(usageRecords.orgId, s.orgId), gte(usageRecords.createdAt, monthStart))),
   ]);
 
@@ -65,7 +60,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     <>
       <PageHeader
         title={`Olá, ${s.user.name.split(" ")[0]}`}
-        subtitle="Onde está o dinheiro hoje."
+        subtitle="Quem encontrar, para quem gerar o site e quem está esperando sua resposta."
         actions={
           <>
             <Link href="/discovery" className="btn btn-ghost">Nova prospecção</Link>
@@ -76,7 +71,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       <Flash sp={sp} />
 
       {pendingSteps > 0 && (
-        <Card className="mb-6" title={`Primeiros passos · ${progress.done}/${progress.required}`} action={<Link href="/onboarding" className="muted text-xs font-semibold hover:underline">Guia completo e tour →</Link>}>
+        <Card className="mb-6" title={`Primeiros passos · ${progress.done}/${progress.required}`} action={<Link href="/onboarding" className="muted text-xs font-semibold hover:underline">Ver passo a passo →</Link>}>
           <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
             {steps.map((st) => (
               <li key={st.id}>
@@ -90,13 +85,13 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         </Card>
       )}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Stat label="Leads" value={total.toLocaleString("pt-BR")} />
         <Stat label="Demonstrações" value={previews?.n ?? 0} />
         <Stat label="Interessados" value={interested} tone="accent" />
-        <Stat label="Vendas" value={won} />
-        <Stat label="MRR" value={formatBRL(mrr?.v ?? 0)} hint={`${mrr?.n ?? 0} assinaturas`} />
-        <Stat label="Recebido no mês" value={formatBRL(received?.v ?? 0)} hint={`${formatBRL(pending?.v ?? 0)} pendente`} />
+        <Stat label="Contatados" value={contacted} hint={`${sentToday?.n ?? 0} hoje`} />
+        <Stat label="Responderam" value={replied} />
+        <Stat label="Fechados" value={won} />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.4fr_1fr]">

@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, like, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, like, sql } from "drizzle-orm";
 import {
   db,
   businesses,
@@ -9,10 +9,7 @@ import {
   leads,
   messages,
   notifications,
-  payments,
-  products,
   proposals,
-  subscriptions,
   suppressionList,
   websites,
   whatsappInstances,
@@ -20,7 +17,7 @@ import {
 import { ingestCandidates } from "./discovery/ingest";
 import type { Candidate } from "./discovery/connectors";
 import { generateSiteForLead } from "./sites/service";
-import { approveContent, createProposal, markSetupPaidManually } from "./commerce";
+import { publishWebsite } from "./sites/publish";
 import { classifyByRules } from "./ai/classify";
 import { transition } from "./handoff";
 import { logLeadEvent, notify, setStage } from "./events";
@@ -150,20 +147,12 @@ export async function seedDemo(orgId: string, userId: string) {
     await notify(orgId, { type: "hot_lead", title: "🔥 Barbearia Exemplo Boa Vista · Recife", body: "“Quanto fica pra fazer?” — Apresentar planos e preços", link: `/inbox?c=${conv.id}`, priority: "high" });
   }
 
-  // 2) Closed sale: paid, approved and published, with an active subscription.
+  // 2) Closed client: site approved and published.
   {
     const r = byKey("estetica");
     await db.update(businesses).set({ services: ["Limpeza de pele", "Design de sobrancelhas", "Massagem relaxante"], description: "Estúdio de estética em Casa Forte com atendimento com hora marcada." }).where(eq(businesses.id, r.b.id));
     const siteId = await generateSiteForLead(orgId, r.lead.id);
-    const [prod] = await db.select().from(products).where(eq(products.orgId, orgId)).orderBy(asc(products.setupPriceCents)).limit(1);
-    if (prod) {
-      const p = await createProposal(orgId, { leadId: r.lead.id, productId: prod.id }, userId);
-      const [cust] = await db.insert(customers).values({ orgId, leadId: r.lead.id, name: "Cliente Exemplo Ltda", document: "11222333000181", email: "cliente@exemplo.com" }).returning();
-      await db.insert(payments).values({ orgId, proposalId: p.id, customerId: cust!.id, kind: "setup", provider: "demo", providerPaymentId: `demo-${randomToken(10)}`, amountCents: p.setupPriceCents, status: "confirmed", paidAt: new Date() });
-      await db.insert(subscriptions).values({ orgId, customerId: cust!.id, proposalId: p.id, websiteId: siteId, provider: "demo", providerSubscriptionId: `demo-sub-${randomToken(10)}`, amountCents: p.monthlyPriceCents, status: "active" });
-      await markSetupPaidManually(orgId, p.id, userId, "Dados de exemplo");
-      await approveContent(p.token);
-    }
+    await publishWebsite(orgId, siteId, userId);
   }
 
   // 3) Ready to contact.

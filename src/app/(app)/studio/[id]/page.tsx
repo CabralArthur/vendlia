@@ -2,15 +2,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, desc, eq } from "drizzle-orm";
 import { requireSession } from "@/server/auth";
-import { db, websites, websiteVersions, leads, businesses, proposals, TEMPLATES } from "@/server/db";
+import { db, websites, websiteVersions, leads, businesses, TEMPLATES } from "@/server/db";
 import { Badge, Card, Field, Notice, PageHeader, timeAgo } from "@/components/ui";
 import { Flash } from "@/components/flash";
 import { Submit } from "@/components/submit";
 import { THEMES } from "@/sites/themes";
 import { previewUrl } from "@/server/whatsapp/service";
-import { siteUrls } from "@/server/commerce";
+import { siteUrls } from "@/server/sites/publish";
 import { env } from "@/server/env";
-import { publishAction, rollbackAction, saveSiteAction, setDomainAction, unpublishAction } from "../../_actions/commerce";
+import { publishAction, rollbackAction, saveSiteAction, setDomainAction, unpublishAction } from "../../_actions/sites";
 import { ExternalLink } from "lucide-react";
 
 export const metadata = { title: "Website Studio" };
@@ -21,10 +21,9 @@ export default async function StudioPage({ params, searchParams }: { params: Pro
   const sp = await searchParams;
   const [w] = await db.select().from(websites).where(and(eq(websites.id, id), eq(websites.orgId, s.orgId)));
   if (!w) notFound();
-  const [[lb], versions, [paid]] = await Promise.all([
+  const [[lb], versions] = await Promise.all([
     db.select({ lead: leads, b: businesses }).from(leads).innerJoin(businesses, eq(businesses.id, leads.businessId)).where(eq(leads.id, w.leadId)),
     db.select().from(websiteVersions).where(eq(websiteVersions.websiteId, w.id)).orderBy(desc(websiteVersions.version)).limit(20),
-    db.select().from(proposals).where(and(eq(proposals.websiteId, w.id), eq(proposals.status, "paid"))).limit(1),
   ]);
   const c = w.content;
   const pairs = <T,>(arr: T[], f: (x: T) => string) => arr.map(f).join("\n");
@@ -92,13 +91,13 @@ export default async function StudioPage({ params, searchParams }: { params: Pro
                 <ul className="space-y-1">{siteUrls(w).map((u) => <li key={u}><a href={u} target="_blank" rel="noreferrer" className="break-all underline">{u}</a></li>)}</ul>
               </div>
             ) : (
-              <p className="muted text-sm">A publicação exige pagamento confirmado e aprovação do conteúdo pelo cliente (feita na página da proposta). {paid ? "Pagamento confirmado ✓" : "Pagamento ainda não confirmado."}</p>
+              <p className="muted text-sm">Publique quando o cliente fechar e aprovar o conteúdo. O site sai sem a faixa de “demonstração”, aparece no Google e o lead vira “Fechado”.</p>
             )}
             <div className="mt-3 flex flex-wrap gap-2">
               {(w.status !== "published" || unpublishedChanges) && (
                 <form action={publishAction}>
                   <input type="hidden" name="siteId" value={w.id} />
-                  <Submit className="btn btn-primary">{unpublishedChanges ? "Publicar alterações" : "Publicar"}</Submit>
+                  <Submit className="btn btn-primary" confirm={unpublishedChanges ? "Colocar as alterações no ar?" : "O cliente aprovou o conteúdo? O site vai ao ar agora."}>{unpublishedChanges ? "Publicar alterações" : "Publicar"}</Submit>
                 </form>
               )}
               {w.status === "published" && (
@@ -108,16 +107,6 @@ export default async function StudioPage({ params, searchParams }: { params: Pro
                 </form>
               )}
             </div>
-            {s.role !== "operator" && w.status !== "published" && (
-              <details className="mt-4 text-sm">
-                <summary className="muted cursor-pointer text-xs">Cliente aprovou e pagou fora do sistema?</summary>
-                <form action={publishAction} className="mt-2 flex gap-2">
-                  <input type="hidden" name="siteId" value={w.id} />
-                  <input className="field" name="overrideReason" placeholder="Ex.: aprovado por WhatsApp em 30/10, Pix recebido" required minLength={10} />
-                  <Submit className="btn btn-ghost" confirm="Publicar registrando aprovação externa (fica no log de auditoria)?">Publicar</Submit>
-                </form>
-              </details>
-            )}
           </Card>
 
           <Card title="Domínio próprio">

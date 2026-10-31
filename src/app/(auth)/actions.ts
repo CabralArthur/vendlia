@@ -42,7 +42,7 @@ export async function signupAction(fd: FormData) {
     redirect("/signup?err=" + encodeURIComponent(e instanceof Error ? e.message : "Erro"));
   }
   await createSession(r.userId, r.orgId);
-  redirect("/onboarding?ok=" + encodeURIComponent("Conta criada! Comece carregando os dados de exemplo e fazendo o tour."));
+  redirect("/onboarding?ok=" + encodeURIComponent("Conta criada! Siga o passo a passo para começar."));
 }
 
 export async function logoutAction() {

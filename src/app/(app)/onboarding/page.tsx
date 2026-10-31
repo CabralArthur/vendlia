@@ -1,240 +1,168 @@
 import Link from "next/link";
 import { requireSession } from "@/server/auth";
-import { getDemoRefs, getSetupProgress } from "@/server/onboarding";
-import { Badge, Card, Notice, PageHeader, STAGE_LABEL } from "@/components/ui";
+import { getSetupProgress } from "@/server/onboarding";
+import { hasDemoData } from "@/server/demo";
+import { Notice, PageHeader } from "@/components/ui";
 import { Flash } from "@/components/flash";
 import { Submit } from "@/components/submit";
-import { StartTour } from "@/components/tour";
-import { LEAD_STAGES, type LeadStage } from "@/server/db/schema";
-import { loadDemoAction, removeDemoAction } from "../_actions/onboarding";
-import { CheckCircle2, Circle, PlayCircle, Database, Trash2, Hand, Zap, ShieldCheck, ArrowRight, Lock } from "lucide-react";
+import { removeDemoAction } from "../_actions/onboarding";
+import { CheckCircle2, ArrowLeft, ArrowRight, Lock, Zap } from "lucide-react";
 
 export const metadata = { title: "Como funciona" };
 
-type Phase = {
-  n: number;
-  title: string;
-  you: string;
-  auto: string;
-  where: { label: string; href: string };
-  needs?: string;
+type Guide = { how: string[]; auto: string; tip?: string };
+
+/** Step-by-step instructions shown for each setup step (keyed by SetupStep.id). */
+const GUIDE: Record<string, Guide> = {
+  leads: {
+    how: [
+      "Abra Prospecção no menu.",
+      "Escolha o segmento (ex.: Barbearia) e a cidade.",
+      "Clique em “Iniciar busca” e aguarde o aviso de busca concluída (cerca de 1 minuto).",
+      "Prefere uma lista própria? Use “Importar CSV” ou “Cadastrar manualmente” na mesma tela.",
+    ],
+    auto: "Busca os negócios, junta duplicados, verifica quem já tem site e dá uma nota de 0 a 100 para cada empresa, explicando o porquê.",
+    tip: "Comece pequeno: uma cidade e um ou dois segmentos.",
+  },
+  preview: {
+    how: [
+      "Abra Leads. Use o filtro “Sem site próprio” e comece pelas notas mais altas.",
+      "Abra um lead e confira nome, telefone e endereço. Corrija se precisar e clique em “Salvar dados”.",
+      "No quadro Demonstração, clique em “Gerar”.",
+      "Clique em “Abrir” para ver o site como o cliente vai ver.",
+    ],
+    auto: "Monta o site só com dados verdadeiros, marca o que precisa ser confirmado com o cliente e deixa a prévia fora do Google, com a faixa “Demonstração”.",
+    tip: "Para gerar vários de uma vez: na lista de Leads, marque as empresas e clique em “Gerar demonstrações”.",
+  },
+  whatsapp: {
+    how: [
+      "Abra Configurações → Números de WhatsApp.",
+      "Dê um apelido ao número e clique em “Conectar número”.",
+      "No celular do chip comercial: WhatsApp → Aparelhos conectados → Conectar aparelho, e escaneie o QR code.",
+      "Aguarde o status mudar para “open”. Se o QR expirar, clique em “Novo QR”.",
+    ],
+    auto: "Passa a enviar as mensagens por esse número e a trazer todas as respostas para o Inbox, em tempo real.",
+    tip: "Use um chip dedicado, nunca seu número pessoal: envio frio pode levar a bloqueio.",
+  },
+  contact: {
+    how: [
+      "Em Configurações, revise a “Mensagem do primeiro contato” (ela já vem pronta).",
+      "Abra Leads e filtre a etapa “Preview criado”.",
+      "Marque os leads e clique em “Enviar 1º contato” — ou use o botão dentro de um lead.",
+      "Acompanhe as mensagens saindo no Inbox.",
+    ],
+    auto: "Envia o link do site em horário comercial (seg a sáb), devagar e com intervalos para proteger o número, e faz um único lembrete após 48h sem resposta.",
+    tip: "Números novos começam com 10 mensagens por dia e o limite cresce aos poucos.",
+  },
+  publish: {
+    how: [
+      "Quando alguém responder com interesse, a conversa aparece em “Precisa de você” no Inbox e um alerta surge na tela.",
+      "Clique em “Assumir atendimento” e converse — preço e forma de pagamento você combina direto com o cliente.",
+      "Fechou? Abra o lead → “Editar no Studio”, ajuste o que o cliente pedir e salve.",
+      "Clique em “Publicar”. O site vai ao ar e o lead vira “Fechado”.",
+    ],
+    auto: "Pausa a automação quando o cliente mostra interesse, para você e a IA nunca responderem juntos. Quem responde “SAIR” é bloqueado na hora.",
+    tip: "Se o cliente tiver domínio próprio, configure no Studio em “Domínio próprio”.",
+  },
 };
 
-const JOURNEY: Phase[] = [
-  {
-    n: 1,
-    title: "Encontrar empresas",
-    you: "Escolhe cidade e segmento (ex.: barbearias em Recife), importa uma planilha ou cadastra à mão.",
-    auto: "Busca os negócios, junta duplicados, verifica se já têm site e dá uma nota de 0 a 100 explicando o porquê.",
-    where: { label: "Prospecção", href: "/discovery" },
-  },
-  {
-    n: 2,
-    title: "Criar a demonstração",
-    you: "Confere os dados da empresa e clica em “Gerar” (ou gera vários de uma vez na lista de leads).",
-    auto: "Monta um site personalizado só com dados verdadeiros, marca o que precisa ser confirmado e deixa a prévia fora do Google, com aviso de “demonstração”.",
-    where: { label: "Leads", href: "/leads" },
-  },
-  {
-    n: 3,
-    title: "Primeiro contato",
-    you: "Seleciona os leads prontos e clica em “Enviar 1º contato”.",
-    auto: "Envia pelo WhatsApp em horário comercial, devagar e com intervalos para proteger o número, e faz um único follow-up após 48h sem resposta.",
-    where: { label: "Leads prontos", href: "/leads?stage=preview_ready" },
-    needs: "WhatsApp conectado",
-  },
-  {
-    n: 4,
-    title: "O cliente responde",
-    you: "Recebe o alerta e clica em “Assumir atendimento” no Inbox.",
-    auto: "Lê a resposta, identifica interesse, pergunta de preço ou vontade de comprar, pausa a automação e avisa você. “SAIR” bloqueia o número na hora.",
-    where: { label: "Inbox", href: "/inbox" },
-    needs: "WhatsApp conectado",
-  },
-  {
-    n: 5,
-    title: "Negociar e enviar proposta",
-    you: "Conversa com o cliente e cria a proposta no lead (pode ajustar o preço).",
-    auto: "Envia o link da proposta com a demonstração, os itens do plano e o botão de pagamento. Cancela propostas antigas do mesmo cliente.",
-    where: { label: "Detalhe do lead", href: "/leads" },
-  },
-  {
-    n: 6,
-    title: "Receber o pagamento",
-    you: "Nada, se o Asaas estiver ligado. Sem Asaas: recebe o Pix e clica em “Marcar pago”.",
-    auto: "O cliente paga por Pix, boleto ou cartão; a confirmação chega do Asaas, a venda vira “Fechado” e a mensalidade é criada.",
-    where: { label: "Financeiro", href: "/finance" },
-    needs: "Asaas (opcional)",
-  },
-  {
-    n: 7,
-    title: "Site no ar e mensalidade",
-    you: "Ajusta o que o cliente pedir no Studio e, se ele tiver, liga o domínio próprio.",
-    auto: "Publica assim que o cliente aprova o conteúdo, cobra todo mês e tira o site do ar após 15 dias de atraso.",
-    where: { label: "Studio (no lead)", href: "/leads?stage=won" },
-  },
-];
-
-const STAGE_HELP: Record<LeadStage, [string, "auto" | "you" | "both"]> = {
-  discovered: ["Acabou de entrar. Nota baixa ou dados incompletos.", "auto"],
-  qualified: ["Nota boa (50+): vale gerar a demonstração.", "auto"],
-  preview_ready: ["Demonstração criada. Pronto para o primeiro contato.", "auto"],
-  ready_to_contact: ["Mensagem na fila, aguardando o horário/limite do número.", "auto"],
-  contacted: ["Primeira mensagem entregue. Aguardando resposta.", "auto"],
-  replied: ["Respondeu algo neutro (uma dúvida, por exemplo).", "auto"],
-  interested: ["Mostrou interesse ou perguntou preço. Sua vez.", "auto"],
-  proposal_sent: ["Você criou a proposta.", "auto"],
-  negotiation: ["Pediu desconto/condições ou abriu o pagamento.", "both"],
-  won: ["Pagamento confirmado.", "auto"],
-  lost: ["Disse que não tem interesse, ou você descartou.", "both"],
-  do_not_contact: ["Pediu para parar. Nunca mais recebe mensagens.", "both"],
-};
-
-const RULES = [
-  "A automação e um humano nunca respondem a mesma conversa ao mesmo tempo.",
-  "Cada mensagem é enviada uma única vez, mesmo se o sistema reiniciar.",
-  "Quem pede para sair é bloqueado na hora, em todos os números.",
-  "A IA nunca fala preço, desconto, prazo ou garantia — isso é sempre com você.",
-  "O site só vai ao ar com pagamento confirmado e conteúdo aprovado pelo cliente.",
-  "Pagamento só conta como confirmado quando o Asaas avisa (não pelo navegador do cliente).",
-];
-
-const FAQ: [string, string][] = [
-  ["Preciso do WhatsApp conectado para começar?", "Não. Dá para prospectar, gerar demonstrações, criar propostas e receber por Pix sem ele — você manda o link da demonstração pelo seu celular. O WhatsApp conectado automatiza o envio e traz as respostas para o Inbox."],
-  ["Os dados de exemplo enviam mensagens?", "Nunca. As empresas, conversas e pagamentos de exemplo são fictícios e ficam bloqueados para envio. Remova quando quiser; seus dados reais não são afetados."],
-  ["Posso mudar os preços?", "Sim, em Financeiro → Planos. Na hora de criar a proposta você ainda pode ajustar o valor só para aquele cliente."],
-  ["O que o cliente vê?", "Primeiro, a demonstração do site dele com uma faixa “Demonstração”. Depois, a página da proposta com os itens do plano e o botão de pagar. Após pagar e aprovar, o site vai ao ar sem a faixa."],
-  ["E se o número for banido?", "O risco existe porque a conexão não é oficial. Por isso a Vendlia envia devagar, só em horário comercial e com limite diário que cresce aos poucos. Use um chip dedicado."],
-];
-
-export default async function OnboardingPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
+export default async function OnboardingPage({ searchParams }: { searchParams: Promise<{ step?: string; ok?: string; err?: string }> }) {
   const s = await requireSession();
   const sp = await searchParams;
-  const [progress, demo] = await Promise.all([getSetupProgress(s.orgId), getDemoRefs(s.orgId)]);
-  const admin = s.role !== "operator";
-  const next = progress.steps.find((x) => !x.done && !x.optional);
+  const [progress, demo] = await Promise.all([getSetupProgress(s.orgId), hasDemoData(s.orgId)]);
+  const steps = progress.steps;
+  const firstPending = Math.max(0, steps.findIndex((x) => !x.done));
+  const requested = Number(sp.step);
+  const idx = Number.isInteger(requested) && requested >= 1 && requested <= steps.length ? requested - 1 : firstPending;
+  const step = steps[idx]!;
+  const guide = GUIDE[step.id]!;
+  const allDone = steps.every((x) => x.done);
 
   return (
     <>
-      <PageHeader title="Como a Vendlia funciona" subtitle="Da empresa sem site até a mensalidade paga — e o que é automático em cada etapa." />
+      <PageHeader title="Como funciona" subtitle={`Passo a passo para começar a vender · ${steps.filter((x) => x.done).length} de ${steps.length} concluídos`} />
       <Flash sp={sp} />
-
-      {/* Start here */}
-      <div className="mb-8 grid items-start gap-4 lg:grid-cols-[1.4fr_1fr]">
-        <section className="overflow-hidden rounded-2xl bg-brand-900 p-6 text-paper sm:p-8">
-          <div className="text-xs font-bold uppercase tracking-widest text-brand-500">Comece por aqui</div>
-          <h2 className="mt-2 text-2xl font-bold leading-tight sm:text-3xl">Veja tudo funcionando em 3 minutos</h2>
-          <ol className="mt-4 space-y-2 text-sm text-paper/80">
-            <li><b className="text-paper">1.</b> Carregue os dados de exemplo — empresas, uma conversa quente e uma venda fechada, todos fictícios.</li>
-            <li><b className="text-paper">2.</b> Faça o tour guiado: ele passa por cada tela e mostra o que fazer.</li>
-            <li><b className="text-paper">3.</b> Siga o checklist abaixo para começar a vender de verdade.</li>
-          </ol>
-          <div className="mt-6 flex flex-wrap gap-2">
-            {!demo.hasDemo && admin && (
-              <form action={loadDemoAction}>
-                <Submit className="btn btn-primary" pendingText="Carregando exemplos…"><Database size={16} /> Carregar dados de exemplo</Submit>
-              </form>
-            )}
-            <StartTour className={`btn ${demo.hasDemo ? "btn-primary" : "border border-white/20 text-paper hover:bg-white/10"}`}>
-              <PlayCircle size={16} /> Fazer o tour guiado
-            </StartTour>
-            {demo.hasDemo && admin && (
+      {demo && (
+        <div className="mb-5">
+          <Notice tone="warn">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span>Há dados de exemplo de uma versão anterior misturados aos seus.</span>
               <form action={removeDemoAction}>
-                <Submit className="btn border border-white/20 text-paper hover:bg-white/10" confirm="Remover todos os dados de exemplo? Seus dados reais não serão afetados." pendingText="Removendo…">
-                  <Trash2 size={15} /> Remover exemplos
-                </Submit>
+                <Submit className="btn btn-ghost !py-1 text-xs" confirm="Remover os dados de exemplo? Seus dados reais não serão afetados.">Remover exemplos</Submit>
               </form>
-            )}
-          </div>
-          {demo.hasDemo && <p className="mt-3 text-xs text-paper/55">Dados de exemplo carregados. Eles nunca enviam mensagens nem geram cobranças.</p>}
-        </section>
-
-        <Card tour="checklist" title={`Para começar a vender · ${progress.done}/${progress.required}`}>
-          <ul className="space-y-3">
-            {progress.steps.map((st) => (
-              <li key={st.id} className="flex gap-3">
-                {st.done ? <CheckCircle2 size={19} className="mt-0.5 shrink-0 text-brand-500" /> : <Circle size={19} className="muted mt-0.5 shrink-0" />}
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={`text-sm font-semibold ${st.done ? "muted line-through" : ""}`}>{st.title}</span>
-                    {st.optional && <Badge>opcional</Badge>}
-                    {next?.id === st.id && <Badge tone="green">próximo passo</Badge>}
-                  </div>
-                  {!st.done && <p className="muted mt-0.5 text-xs">{st.why}</p>}
-                  {!st.done && st.blockedBy && <p className="mt-1 flex items-start gap-1 text-xs text-amber-700 dark:text-amber-300"><Lock size={12} className="mt-0.5 shrink-0" />{st.blockedBy}</p>}
-                  {!st.done && <Link href={st.href} className="mt-1 inline-flex items-center gap-1 text-xs font-semibold hover:underline">{st.cta} <ArrowRight size={12} /></Link>}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      </div>
-
-      {/* Journey */}
-      <h2 className="mb-1 text-lg font-bold">A jornada de uma venda</h2>
-      <p className="muted mb-4 text-sm">Sete etapas. Em cada uma, o que é com você e o que a Vendlia faz sozinha.</p>
-      <ol className="relative mb-10 space-y-3 before:absolute before:top-4 before:bottom-4 before:left-[19px] before:w-px before:bg-[var(--line)]">
-        {JOURNEY.map((p) => (
-          <li key={p.n} className="relative flex gap-4">
-            <span className="z-10 grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand-900 text-sm font-bold text-brand-500 ring-4 ring-[var(--bg)]">{p.n}</span>
-            <div className="panel flex-1 p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="font-semibold">{p.title}</h3>
-                <div className="flex items-center gap-2">
-                  {p.needs && <Badge tone="amber">precisa: {p.needs}</Badge>}
-                  <Link href={p.where.href} className="muted text-xs font-semibold hover:underline">{p.where.label} →</Link>
-                </div>
-              </div>
-              <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
-                <div className="rounded-lg bg-[var(--panel-2)] p-3">
-                  <div className="mb-1 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide"><Hand size={13} /> Você</div>
-                  <p className="muted">{p.you}</p>
-                </div>
-                <div className="rounded-lg border border-brand-500/30 bg-brand-500/8 p-3">
-                  <div className="mb-1 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-emerald-700 dark:text-brand-400"><Zap size={13} /> A Vendlia faz sozinha</div>
-                  <p className="muted">{p.auto}</p>
-                </div>
-              </div>
             </div>
-          </li>
-        ))}
-      </ol>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card title="Etapas do funil (o que cada uma significa)">
-          <ul className="divide-y divide-[var(--line)] text-sm">
-            {LEAD_STAGES.map((st) => (
-              <li key={st} className="flex items-start justify-between gap-3 py-2">
-                <div>
-                  <span className="font-semibold">{STAGE_LABEL[st]}</span>
-                  <p className="muted text-xs">{STAGE_HELP[st][0]}</p>
-                </div>
-                <Badge tone={STAGE_HELP[st][1] === "auto" ? "green" : "neutral"}>{STAGE_HELP[st][1] === "auto" ? "automático" : "automático ou você"}</Badge>
-              </li>
-            ))}
-          </ul>
-        </Card>
-
-        <div className="space-y-6">
-          <Card title={<span className="inline-flex items-center gap-2"><ShieldCheck size={16} /> Regras que a Vendlia sempre segue</span>}>
-            <ul className="space-y-2 text-sm">
-              {RULES.map((r) => <li key={r} className="flex gap-2"><CheckCircle2 size={16} className="mt-0.5 shrink-0 text-brand-500" />{r}</li>)}
-            </ul>
-          </Card>
-          <Card title="Perguntas frequentes">
-            <div className="space-y-2">
-              {FAQ.map(([q, a]) => (
-                <details key={q} className="rounded-lg border border-[var(--line)] px-4 py-3 text-sm">
-                  <summary className="cursor-pointer font-semibold">{q}</summary>
-                  <p className="muted mt-2">{a}</p>
-                </details>
-              ))}
-            </div>
-          </Card>
+          </Notice>
         </div>
-      </div>
+      )}
+      {allDone && <div className="mb-5"><Notice tone="ok">Tudo configurado. Agora é repetir: achar clientes, gerar sites, entrar em contato e fechar.</Notice></div>}
 
-      {!admin && <div className="mt-6"><Notice tone="info">Carregar ou remover dados de exemplo é feito por um administrador.</Notice></div>}
+      <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+        <nav aria-label="Passos" className="panel h-fit p-2">
+          <ol>
+            {steps.map((st, i) => (
+              <li key={st.id}>
+                <Link
+                  href={`/onboarding?step=${i + 1}`}
+                  aria-current={i === idx ? "step" : undefined}
+                  className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${i === idx ? "bg-[var(--panel-2)] font-semibold" : "hover:bg-[var(--panel-2)]"}`}
+                >
+                  {st.done ? (
+                    <CheckCircle2 size={20} className="shrink-0 text-brand-500" />
+                  ) : (
+                    <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] font-bold ${i === idx ? "bg-brand-900 text-paper" : "muted border border-[var(--line)]"}`}>{i + 1}</span>
+                  )}
+                  <span className={st.done && i !== idx ? "muted" : ""}>{st.title}</span>
+                </Link>
+              </li>
+            ))}
+          </ol>
+        </nav>
+
+        <section className="panel p-6 sm:p-8">
+          <div className="muted text-xs font-semibold uppercase tracking-wider">Passo {idx + 1} de {steps.length}</div>
+          <h2 className="mt-1 flex flex-wrap items-center gap-2 text-2xl font-bold tracking-tight">
+            {step.title}
+            {step.done && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/12 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                <CheckCircle2 size={13} /> feito
+              </span>
+            )}
+          </h2>
+          <p className="muted mt-2 max-w-2xl">{step.why}</p>
+
+          {step.blockedBy && !step.done && (
+            <div className="mt-4">
+              <Notice tone="warn"><span className="inline-flex items-start gap-2"><Lock size={15} className="mt-0.5 shrink-0" />{step.blockedBy}</span></Notice>
+            </div>
+          )}
+
+          <h3 className="mt-6 mb-3 text-sm font-semibold">Como fazer</h3>
+          <ol className="space-y-3">
+            {guide.how.map((h, i) => (
+              <li key={h} className="flex gap-3 text-sm">
+                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-900 text-xs font-bold text-brand-500">{i + 1}</span>
+                <span className="pt-0.5">{h}</span>
+              </li>
+            ))}
+          </ol>
+
+          <div className="mt-6 rounded-xl border border-brand-500/30 bg-brand-500/8 p-4 text-sm">
+            <div className="mb-1 flex items-center gap-1.5 font-semibold text-emerald-700 dark:text-brand-400"><Zap size={15} /> A Vendlia faz sozinha</div>
+            <p className="muted">{guide.auto}</p>
+          </div>
+          {guide.tip && <p className="muted mt-3 text-xs"><b>Dica:</b> {guide.tip}</p>}
+
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] pt-5">
+            {idx > 0 ? <Link href={`/onboarding?step=${idx}`} className="btn btn-ghost"><ArrowLeft size={15} /> Anterior</Link> : <span />}
+            <div className="flex flex-wrap gap-2">
+              <Link href={step.href} className={`btn ${step.done ? "btn-ghost" : "btn-primary"}`}>{step.cta} <ArrowRight size={15} /></Link>
+              {idx < steps.length - 1 && (
+                <Link href={`/onboarding?step=${idx + 2}`} className={`btn ${step.done ? "btn-primary" : "btn-ghost"}`}>Próximo passo</Link>
+              )}
+            </div>
+          </div>
+        </section>
+      </div>
     </>
   );
 }

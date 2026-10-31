@@ -8,7 +8,6 @@ import { and, eq, gt } from "drizzle-orm";
 import { db, sessions, users, memberships, organizations } from "./db";
 import { randomToken } from "@/lib/text";
 import { defaultOrgSettings } from "./org";
-import { seedOrgDefaults } from "./org";
 
 const COOKIE = "vendlia_session";
 const SESSION_DAYS = 30;
@@ -117,7 +116,6 @@ export async function registerOwner(input: { name: string; email: string; passwo
       .values({ name: input.orgName.trim(), slug: `${slugBase || "org"}-${randomToken(3).toLowerCase()}`, settings: defaultOrgSettings() })
       .returning();
     await tx.insert(memberships).values({ userId: u!.id, orgId: o!.id, role: "owner" });
-    await seedOrgDefaults(tx, o!.id);
     return { userId: u!.id, orgId: o!.id };
   });
 }

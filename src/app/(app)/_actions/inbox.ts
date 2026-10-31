@@ -2,10 +2,9 @@
 import { and, eq } from "drizzle-orm";
 import { requireSession } from "@/server/auth";
 import { act, str } from "@/server/action";
-import { db, conversations, notifications } from "@/server/db";
+import { db, conversations } from "@/server/db";
 import { queueReply } from "@/server/whatsapp/service";
 import { transition } from "@/server/handoff";
-import { isNull } from "drizzle-orm";
 
 async function own(orgId: string, id: string) {
   const [c] = await db.select().from(conversations).where(and(eq(conversations.id, id), eq(conversations.orgId, orgId)));
@@ -44,12 +43,5 @@ export async function setConversationState(fd: FormData) {
     else if (to === "AI_ACTIVE") await transition(s.orgId, id, "AI_ACTIVE", "Devolvida para automação", s.userId, { assigneeId: null });
     else throw new Error("Estado inválido");
     return to === "RESOLVED" ? "Conversa encerrada." : "Automação reativada para esta conversa.";
-  });
-}
-
-export async function markAllRead() {
-  const s = await requireSession();
-  return act("/notifications", async () => {
-    await db.update(notifications).set({ readAt: new Date() }).where(and(eq(notifications.orgId, s.orgId), isNull(notifications.readAt)));
   });
 }

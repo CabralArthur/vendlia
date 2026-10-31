@@ -1,7 +1,6 @@
 "use server";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { revalidatePath } from "next/cache";
 import { requireSession } from "@/server/auth";
 import { act, str } from "@/server/action";
 import { db, businesses, discoveryRuns, leads, contactPoints, LEAD_STAGES, WEBSITE_STATUSES, suppressionList } from "@/server/db";
@@ -219,18 +218,4 @@ export async function setContactPermission(fd: FormData) {
     await logLeadEvent(s.orgId, leadId, "consent", `Permissão de contato: ${permission}`, null, s.userId);
     return "Permissão atualizada.";
   });
-}
-
-/** Used by the Kanban drag-and-drop (no redirect). */
-export async function moveLead(leadId: string, stage: string) {
-  const s = await requireSession();
-  const to = z.enum(LEAD_STAGES).parse(stage);
-  const [l] = await db.select().from(leads).where(and(eq(leads.id, leadId), eq(leads.orgId, s.orgId)));
-  if (!l || l.stage === to) return;
-  if (to === "do_not_contact") {
-    const [b] = await db.select().from(businesses).where(eq(businesses.id, l.businessId));
-    if (b?.phoneE164) await db.insert(suppressionList).values({ orgId: s.orgId, value: b.phoneE164, reason: "Movido para Não contatar" }).onConflictDoNothing();
-  }
-  await setStage(s.orgId, leadId, to, s.userId, l.stage);
-  revalidatePath("/pipeline");
 }

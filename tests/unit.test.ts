@@ -6,7 +6,6 @@ import { classifyByRules } from "@/server/ai/classify";
 import { buildOverpassQuery, mapOsmElements, mapGooglePlaces, parseCsv, mapCsvRows, classifyWebsite } from "@/server/discovery/connectors";
 import { buildRuleContent, copyIsGrounded } from "@/server/ai/sitecopy";
 import { brPhoneVariants, effectiveDailyLimit, inBusinessHours, nextBusinessOpening, renderTemplate } from "@/server/whatsapp/limits";
-import { isValidCpfCnpj } from "@/server/payments/asaas";
 import { extractText, resolveJid } from "@/server/whatsapp/evolution";
 import { canTransition } from "@/server/handoff";
 
@@ -161,12 +160,6 @@ describe("pacing", () => {
 });
 
 describe("misc", () => {
-  it("validates CPF/CNPJ", () => {
-    expect(isValidCpfCnpj("529.982.247-25")).toBe(true);
-    expect(isValidCpfCnpj("111.111.111-11")).toBe(false);
-    expect(isValidCpfCnpj("11.222.333/0001-81")).toBe(true);
-    expect(isValidCpfCnpj("11.222.333/0001-80")).toBe(false);
-  });
   it("extracts WhatsApp text and resolves LID jids", () => {
     expect(extractText({ conversation: "oi" })).toBe("oi");
     expect(extractText({ extendedTextMessage: { text: "link" } })).toBe("link");

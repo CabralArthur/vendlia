@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, like, not, sql } from "drizzle-orm";
-import { db, businesses, conversations, leads, messages, proposals, websites, whatsappInstances } from "./db";
+import { db, businesses, conversations, leads, messages, websites, whatsappInstances } from "./db";
 import { env } from "./env";
 import { isDemoInstance, DEMO_INSTANCE_PREFIX } from "@/lib/demo";
 
@@ -42,10 +42,10 @@ export async function getSetupProgress(orgId: string): Promise<{ steps: SetupSte
       ),
     db
       .select({ n: sql<number>`count(*)::int` })
-      .from(proposals)
-      .innerJoin(leads, eq(leads.id, proposals.leadId))
+      .from(websites)
+      .innerJoin(leads, eq(leads.id, websites.leadId))
       .innerJoin(businesses, eq(businesses.id, leads.businessId))
-      .where(and(eq(proposals.orgId, orgId), eq(proposals.status, "paid"), eq(businesses.isDemo, false))),
+      .where(and(eq(websites.orgId, orgId), eq(websites.status, "published"), eq(businesses.isDemo, false))),
   ]);
   const waOpen = inst.some((i) => i.status === "open" && !isDemoInstance(i.name));
 
@@ -84,21 +84,11 @@ export async function getSetupProgress(orgId: string): Promise<{ steps: SetupSte
       done: (sent?.n ?? 0) > 0,
     },
     {
-      id: "payments",
-      title: "Configurar pagamentos (Asaas)",
-      why: "O cliente paga sozinho por Pix, boleto ou cartão e a mensalidade é cobrada todo mês. Sem isso, receba por Pix e use “Marcar pago”.",
-      href: "/settings#integracoes",
-      cta: "Ver integrações",
-      done: !!e.ASAAS_API_KEY,
-      optional: true,
-      blockedBy: e.ASAAS_API_KEY ? undefined : "Crie a conta no Asaas e preencha ASAAS_API_KEY e ASAAS_WEBHOOK_TOKEN no Railway.",
-    },
-    {
-      id: "sale",
-      title: "Fechar a primeira venda",
-      why: "Pagamento confirmado + conteúdo aprovado pelo cliente = site publicado e mensalidade ativa.",
-      href: "/finance",
-      cta: "Financeiro",
+      id: "publish",
+      title: "Publicar o primeiro site",
+      why: "Cliente fechou e aprovou o conteúdo? Publique no Studio: o site vai ao ar sem a faixa de demonstração.",
+      href: "/leads?stage=interested",
+      cta: "Ver interessados",
       done: (won?.n ?? 0) > 0,
     },
   ];
