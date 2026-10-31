@@ -1,6 +1,7 @@
 import type { ScoreFactor, WebsiteStatus, LeadStage } from "./db/schema";
 import { isBrMobile } from "@/lib/phone";
 import { segmentById } from "./discovery/segments";
+import { STAGE_LABEL } from "@/lib/labels";
 
 export type ScoreInput = {
   websiteStatus: WebsiteStatus;
@@ -88,14 +89,14 @@ export type EligibilityInput = {
 /** Whether we may send the FIRST outbound message to this lead. */
 export function outreachEligibility(i: EligibilityInput): { eligible: boolean; reasons: string[] } {
   const reasons: string[] = [];
-  if (!i.phoneE164) reasons.push("Sem telefone");
-  else if (!isBrMobile(i.phoneE164)) reasons.push("Número não é celular");
+  if (!i.phoneE164) reasons.push("Sem telefone cadastrado");
+  else if (!isBrMobile(i.phoneE164)) reasons.push("O número é fixo (sem WhatsApp)");
   if (i.waExists === false) reasons.push("Número não possui WhatsApp");
   if (i.suppressed || i.permission === "opted_out") reasons.push("Contato pediu para não ser contatado");
-  if (i.stage === "do_not_contact" || i.stage === "lost" || i.stage === "won") reasons.push(`Etapa ${i.stage}`);
-  if (i.alreadyContacted) reasons.push("Já foi contatado");
-  if (!i.hasPreview) reasons.push("Demonstração ainda não criada");
-  if (i.permission !== "opt_in" && !i.allowColdOutreach) reasons.push("Sem opt-in e primeiro contato desativado");
-  if (i.permission === "unknown" && i.allowColdOutreach) reasons.push("Contato não verificado como comercial");
+  if (i.stage === "do_not_contact" || i.stage === "lost" || i.stage === "won") reasons.push(`O lead está como “${STAGE_LABEL[i.stage]}”`);
+  if (i.alreadyContacted) reasons.push("Já recebeu o primeiro contato");
+  if (!i.hasPreview) reasons.push("O site de demonstração ainda não foi gerado");
+  if (i.permission !== "opt_in" && !i.allowColdOutreach) reasons.push("Primeiro contato sem autorização está desligado em Configurações");
+  if (i.permission === "unknown" && i.allowColdOutreach) reasons.push("Confirme que o número é comercial (em Contato, escolha a permissão e salve)");
   return { eligible: reasons.length === 0, reasons };
 }

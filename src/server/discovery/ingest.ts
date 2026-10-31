@@ -137,7 +137,7 @@ export async function ingestCandidates(orgId: string, candidates: Candidate[]): 
           orgId,
           leadId: l!.id,
           type: "discovered",
-          message: `Encontrado via ${c.source}`,
+          message: `Encontrado via ${({ osm: "OpenStreetMap", google_places: "Google", csv: "planilha CSV", manual: "cadastro manual" } as Record<string, string>)[c.source] ?? c.source}`,
           data: { source: c.source, externalId: c.externalId },
         });
       }

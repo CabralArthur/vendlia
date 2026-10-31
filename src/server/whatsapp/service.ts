@@ -26,6 +26,7 @@ import { classifyMessage } from "../ai/classify";
 import { transition, automationMaySpeak } from "../handoff";
 import { phoneFromJid, formatBrPhone } from "@/lib/phone";
 import { isDemoInstance } from "@/lib/demo";
+import { INTENT_LABEL } from "@/lib/labels";
 import { EvolutionClient, EvolutionError, extractText, resolveJid, STATUS_MAP, type EvolutionWebhook, type UpsertData } from "./evolution";
 import {
   brPhoneVariants,
@@ -533,7 +534,7 @@ async function handleUpsert(inst: typeof whatsappInstances.$inferSelect, d: Upse
     }
     if (state === "AI_ACTIVE" || state === "RESOLVED") {
       await transition(orgId, conv.id, "HUMAN_REQUESTED", `${c.intent}: ${c.reason}`);
-      if (effectiveLeadId) await logLeadEvent(orgId, effectiveLeadId, "handoff", `Transferido para humano (${c.intent})`, { summary: c.summary });
+      if (effectiveLeadId) await logLeadEvent(orgId, effectiveLeadId, "handoff", `Cliente precisa de você: ${INTENT_LABEL[c.intent] ?? c.intent}`, { summary: c.summary });
     }
     await notify(orgId, {
       type: "hot_lead",

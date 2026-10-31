@@ -1,26 +1,34 @@
 import { Logo } from "@/components/ui";
 
+const STEPS = [
+  ["Ache clientes", "Empresas sem site na sua cidade, com nota de oportunidade."],
+  ["Gere o site", "Uma demonstração pronta com os dados reais de cada empresa."],
+  ["Entre em contato", "O link vai pelo WhatsApp e você é avisado quando alguém se interessa."],
+];
+
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <main className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
-      <div className="relative hidden overflow-hidden bg-brand-900 p-12 text-paper lg:flex lg:flex-col lg:justify-between">
-        <Logo inverted className="h-10 w-auto self-start" />
-        <div>
-          <p className="max-w-md text-4xl font-bold leading-tight tracking-tight">
-            Sua próxima venda começa <span className="text-brand-500">antes do primeiro contato.</span>
-          </p>
-          <ul className="mt-8 space-y-3 text-sm text-paper/75">
-            <li>● Encontre negócios sem site na sua cidade</li>
-            <li>● Gere uma demonstração personalizada em segundos</li>
-            <li>● Receba o alerta quando o cliente quiser comprar</li>
-            <li>● Feche, cobre e publique sem sair do painel</li>
-          </ul>
+    <main className="grid min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
+      <div className="hidden flex-col justify-between bg-forest p-12 text-paper lg:flex xl:p-16">
+        <Logo inverted className="h-9 w-auto self-start" />
+        <div className="max-w-md">
+          <p className="text-[2.25rem] font-bold leading-[1.1] tracking-[-0.03em]">Sua próxima venda começa antes do primeiro contato.</p>
+          <ol className="mt-10 space-y-5">
+            {STEPS.map(([t, d], i) => (
+              <li key={t} className="flex gap-4">
+                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-mint/50 text-[0.8125rem] font-bold text-mint">{i + 1}</span>
+                <div>
+                  <div className="font-semibold">{t}</div>
+                  <div className="text-[0.875rem] text-paper/65">{d}</div>
+                </div>
+              </li>
+            ))}
+          </ol>
         </div>
-        <p className="text-xs text-paper/50">© {new Date().getFullYear()} Vendlia</p>
-        <div className="pointer-events-none absolute -right-24 -bottom-24 h-96 w-96 rounded-full bg-brand-500/15 blur-3xl" />
+        <p className="text-[0.75rem] text-paper/45">© {new Date().getFullYear()} Vendlia</p>
       </div>
-      <div className="flex items-center justify-center p-6">
-        <div className="w-full max-w-sm">{children}</div>
+      <div className="flex items-center justify-center px-5 py-12">
+        <div className="w-full max-w-[380px]">{children}</div>
       </div>
     </main>
   );

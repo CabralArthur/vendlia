@@ -56,11 +56,11 @@ export function Live({ refreshOn = [] }: { refreshOn?: string[] }) {
         <a
           key={t.id}
           href={t.link ?? "#"}
-          className={`pointer-events-auto block rounded-xl border p-4 shadow-xl ${t.priority === "high" ? "border-brand-500 bg-brand-900 text-paper" : "panel"}`}
+          className={`pointer-events-auto block rounded-xl border p-4 shadow-xl ${t.priority === "high" ? "border-forest bg-forest text-paper" : "panel"}`}
         >
           <div className="text-sm font-semibold">{t.title}</div>
           <div className={`mt-1 text-xs ${t.priority === "high" ? "text-paper/75" : "muted"}`}>{t.body}</div>
-          {t.priority === "high" && <div className="mt-2 text-xs font-semibold text-brand-500">Assumir atendimento →</div>}
+          {t.priority === "high" && <div className="mt-2 text-xs font-semibold text-mint">Abrir conversa</div>}
         </a>
       ))}
     </div>

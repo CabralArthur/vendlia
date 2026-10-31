@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { env } from "../env";
-import { segmentById, type SegmentId } from "./segments";
+import { segmentById, UF_NAME, type SegmentId } from "./segments";
 
 export type Candidate = {
   source: "osm" | "google_places" | "csv" | "manual";
@@ -47,18 +47,45 @@ export function cityRegex(city: string) {
   return `^${body}$`;
 }
 
-export function buildOverpassQuery(p: DiscoveryParams) {
+/**
+ * Overpass query for one segment inside a city.
+ * With `areaId` (resolved via Nominatim) the query is cheap; without it we fall back to a
+ * name match on municipality boundaries (accent/case-insensitive).
+ */
+export function buildOverpassQuery(p: DiscoveryParams, areaId?: number) {
   const seg = segmentById(p.segment);
-  const uf = p.state.trim().toUpperCase().replace(/[^A-Z]/g, "");
   const parts = seg.osm.map((f) => `nwr${f}(area.a);`).join("\n  ");
-  return `[out:json][timeout:90];
-area["ISO3166-2"="BR-${uf}"]["admin_level"="4"]->.uf;
-rel(area.uf)["boundary"="administrative"]["admin_level"="8"]["name"~"${cityRegex(p.city)}",i];
-map_to_area->.a;
+  const area = areaId
+    ? `area(id:${areaId})->.a;`
+    : `area["boundary"="administrative"]["admin_level"="8"]["name"~"${cityRegex(p.city)}",i]->.a;`;
+  return `[out:json][timeout:60];
+${area}
 (
   ${parts}
 );
 out center tags ${Math.min(p.limit ?? 300, 1000)};`;
+}
+
+const UA = "Vendlia/1.0 (prospeccao B2B; https://github.com/CabralArthur/vendlia)";
+
+/** Finds the municipality's OSM relation and returns its Overpass area id (3600000000 + relation id). */
+export async function resolveCityArea(p: DiscoveryParams, fetchImpl: typeof fetch = fetch): Promise<number | null> {
+  const uf = p.state.trim().toUpperCase();
+  const params = new URLSearchParams({ city: p.city.trim(), state: UF_NAME[uf] ?? uf, countrycodes: "br", format: "jsonv2", limit: "5" });
+  try {
+    const res = await fetchImpl(`https://nominatim.openstreetmap.org/search?${params}`, {
+      headers: { "User-Agent": UA, Accept: "application/json", "Accept-Language": "pt-BR" },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) return null;
+    const list = (await res.json()) as { osm_type: string; osm_id: number; addresstype?: string; type?: string }[];
+    const hit =
+      list.find((r) => r.osm_type === "relation" && ["city", "town", "municipality", "village"].includes(r.addresstype ?? "")) ??
+      list.find((r) => r.osm_type === "relation" && r.type === "administrative");
+    return hit ? 3_600_000_000 + Number(hit.osm_id) : null;
+  } catch {
+    return null;
+  }
 }
 
 type OsmElement = {
@@ -105,18 +132,25 @@ export function mapOsmElements(elements: OsmElement[], p: DiscoveryParams): Cand
 
 const OVERPASS_MIRRORS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.private.coffee/api/interpreter"];
 
+export const OSM_UNAVAILABLE = "O OpenStreetMap está sobrecarregado agora. Tente de novo em alguns minutos.";
+
 /** Queries Overpass, falling back across public mirrors when one is busy (429/5xx/timeouts). */
-export async function fetchOsm(p: DiscoveryParams, fetchImpl: typeof fetch = fetch): Promise<Candidate[]> {
-  const body = "data=" + encodeURIComponent(buildOverpassQuery(p));
-  const urls = [...new Set([env().OVERPASS_URL, ...OVERPASS_MIRRORS])];
+export async function fetchOsm(p: DiscoveryParams, fetchImpl: typeof fetch = fetch, opts: { retryDelayMs?: number } = {}): Promise<Candidate[]> {
+  const areaId = await resolveCityArea(p, fetchImpl);
+  const body = "data=" + encodeURIComponent(buildOverpassQuery(p, areaId ?? undefined));
+  const mirrors = [...new Set([env().OVERPASS_URL, ...OVERPASS_MIRRORS])];
+  // Two rounds across all mirrors, with a pause in between: public servers are often busy for a few seconds.
+  const attempts = [...mirrors, ...mirrors];
   const errors: string[] = [];
-  for (const url of urls) {
+  for (let n = 0; n < attempts.length; n++) {
+    if (n === mirrors.length) await new Promise((r) => setTimeout(r, opts.retryDelayMs ?? 8_000));
+    const url = attempts[n]!;
     try {
       const res = await fetchImpl(url, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json", "User-Agent": "Vendlia/1.0 (prospeccao B2B; contato via app)" },
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json", "User-Agent": UA },
         body,
-        signal: AbortSignal.timeout(100_000),
+        signal: AbortSignal.timeout(75_000),
       });
       if (!res.ok) {
         errors.push(`${new URL(url).host}: HTTP ${res.status}`);
@@ -132,7 +166,8 @@ export async function fetchOsm(p: DiscoveryParams, fetchImpl: typeof fetch = fet
       errors.push(`${new URL(url).host}: ${e instanceof Error ? e.message : String(e)}`.slice(0, 160));
     }
   }
-  throw new Error(`OpenStreetMap indisponível no momento (${errors.join("; ")}). Tente de novo em alguns minutos.`);
+  console.error("[discovery] OpenStreetMap falhou", { city: p.city, state: p.state, areaId, errors });
+  throw new Error(OSM_UNAVAILABLE);
 }
 
 /* --------------------------- Google Places (New) -------------------------- */

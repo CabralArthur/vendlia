@@ -1,25 +1,21 @@
 import Link from "next/link";
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { requireSession } from "@/server/auth";
-import { db, leads, websites, conversations, businesses, messages, whatsappInstances, usageRecords, LEAD_STAGES } from "@/server/db";
-import { Card, PageHeader, Stat, STAGE_LABEL, timeAgo, Badge } from "@/components/ui";
+import { db, leads, websites, conversations, businesses, messages, LEAD_STAGES } from "@/server/db";
+import { Badge, Card, PageHeader, Stat, STAGE_LABEL, INTENT_LABEL, timeAgo } from "@/components/ui";
 import { Flash } from "@/components/flash";
 import { getSetupProgress } from "@/server/onboarding";
-import { isDemoInstance } from "@/lib/demo";
-import { llmConfigured } from "@/server/ai/llm";
-import { CheckCircle2, Circle, ArrowRight, Flame } from "lucide-react";
+import { formatBrPhone } from "@/lib/phone";
+import { MessagesSquare, Radar } from "lucide-react";
 
 export const metadata = { title: "Visão geral" };
 
 export default async function Dashboard({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
   const s = await requireSession();
   const sp = await searchParams;
-  const monthStart = new Date();
-  monthStart.setUTCDate(1);
-  monthStart.setUTCHours(3, 0, 0, 0);
   const dayStart = new Date(Date.now() - ((Date.now() - 3 * 3600_000) % 86400_000));
 
-  const [stageRows, [previews], hot, [sentToday], instances, [aiSpend]] = await Promise.all([
+  const [stageRows, [sites], waiting, [sentToday], progress] = await Promise.all([
     db.select({ stage: leads.stage, n: sql<number>`count(*)::int` }).from(leads).where(eq(leads.orgId, s.orgId)).groupBy(leads.stage),
     db.select({ n: sql<number>`count(*)::int` }).from(websites).where(eq(websites.orgId, s.orgId)),
     db
@@ -29,132 +25,136 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       .leftJoin(businesses, eq(businesses.id, leads.businessId))
       .where(and(eq(conversations.orgId, s.orgId), inArray(conversations.state, ["HUMAN_REQUESTED", "HUMAN_ASSIGNED"])))
       .orderBy(desc(conversations.handoffAt))
-      .limit(6),
+      .limit(8),
     db.select({ n: sql<number>`count(*)::int` }).from(messages).where(and(eq(messages.orgId, s.orgId), inArray(messages.kind, ["outreach", "followup"]), gte(messages.sentAt, dayStart))),
-    db.select().from(whatsappInstances).where(eq(whatsappInstances.orgId, s.orgId)),
-    db.select({ v: sql<number>`coalesce(sum(${usageRecords.costMicros}),0)::int` }).from(usageRecords).where(and(eq(usageRecords.orgId, s.orgId), gte(usageRecords.createdAt, monthStart))),
+    getSetupProgress(s.orgId),
   ]);
 
   const count = (st: string[]) => stageRows.filter((r) => st.includes(r.stage)).reduce((a, r) => a + r.n, 0);
   const total = stageRows.reduce((a, r) => a + r.n, 0);
-  const interested = count(["interested", "proposal_sent", "negotiation"]);
   const won = count(["won"]);
   const contacted = count(["contacted", "replied", "interested", "proposal_sent", "negotiation", "won", "lost"]);
   const replied = count(["replied", "interested", "proposal_sent", "negotiation", "won"]);
-
-  const progress = await getSetupProgress(s.orgId);
-  const steps = progress.steps;
-  const pendingSteps = steps.filter((x) => !x.done && !x.optional).length;
-  const realInstances = instances.filter((i) => !isDemoInstance(i.name));
+  const interested = count(["interested", "proposal_sent", "negotiation", "won"]);
 
   const funnel = [
     { label: "Leads", v: total },
+    { label: "Com site gerado", v: sites?.n ?? 0 },
     { label: "Contatados", v: contacted },
     { label: "Responderam", v: replied },
-    { label: "Interessados", v: interested + won },
+    { label: "Interessados", v: interested },
     { label: "Fechados", v: won },
   ];
-  const maxF = Math.max(1, funnel[0]!.v);
+  const maxF = Math.max(1, ...funnel.map((f) => f.v));
+  const next = progress.steps.find((x) => !x.done);
+  const doneCount = progress.steps.filter((x) => x.done).length;
+  const stagesWithLeads = LEAD_STAGES.filter((st) => (stageRows.find((r) => r.stage === st)?.n ?? 0) > 0);
 
   return (
     <>
       <PageHeader
         title={`Olá, ${s.user.name.split(" ")[0]}`}
-        subtitle="Quem encontrar, para quem gerar o site e quem está esperando sua resposta."
+        subtitle="Quem respondeu, quem falta contatar e como está o funil."
         actions={
           <>
-            <Link href="/discovery" className="btn btn-ghost">Nova prospecção</Link>
-            <Link href="/inbox" className="btn btn-dark">Abrir inbox</Link>
+            <Link href="/discovery" className="btn btn-secondary"><Radar size={16} /> Prospectar</Link>
+            <Link href="/inbox" className="btn btn-primary"><MessagesSquare size={16} /> Abrir Inbox</Link>
           </>
         }
       />
       <Flash sp={sp} />
 
-      {pendingSteps > 0 && (
-        <Card className="mb-6" title={`Primeiros passos · ${progress.done}/${progress.required}`} action={<Link href="/onboarding" className="muted text-xs font-semibold hover:underline">Ver passo a passo →</Link>}>
-          <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
-            {steps.map((st) => (
-              <li key={st.id}>
-                <Link href={st.href} className={`flex h-full items-start gap-2 rounded-lg border border-[var(--line)] p-3 text-sm ${st.done ? "opacity-60" : "hover:border-[var(--accent)]"}`}>
-                  {st.done ? <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-brand-500" /> : <Circle size={18} className="muted mt-0.5 shrink-0" />}
-                  <span className={st.done ? "line-through" : "font-medium"}>{st.title}{st.optional ? " (opcional)" : ""}</span>
+      {next && (
+        <Link href="/onboarding" className="panel mb-6 flex flex-wrap items-center gap-4 px-5 py-4 transition-colors hover:border-[var(--line-strong)]">
+          <div className="relative h-10 w-10 shrink-0">
+            <svg viewBox="0 0 36 36" className="h-10 w-10 -rotate-90" aria-hidden>
+              <circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--surface-2)" strokeWidth="4" />
+              <circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--color-mint-600)" strokeWidth="4" strokeLinecap="round" strokeDasharray={`${(doneCount / progress.steps.length) * 97.4} 97.4`} />
+            </svg>
+            <span className="absolute inset-0 grid place-items-center text-[0.6875rem] font-bold tabular-nums">{doneCount}/{progress.steps.length}</span>
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-semibold">Próximo passo: {next.title.charAt(0).toLowerCase() + next.title.slice(1)}</div>
+            <div className="muted truncate text-[0.8125rem]">{next.why}</div>
+          </div>
+          <span className="btn btn-secondary btn-sm">Continuar</span>
+        </Link>
+      )}
+
+      <section aria-label="Aguardando você" className={`mb-6 overflow-hidden rounded-[var(--radius-lg)] ${waiting.length ? "bg-forest text-paper" : "panel"}`}>
+        <div className="flex items-center justify-between gap-3 px-5 py-4">
+          <div>
+            <h2 className="text-[0.9375rem] font-semibold">
+              {waiting.length ? `${waiting.length} ${waiting.length === 1 ? "cliente esperando" : "clientes esperando"} sua resposta` : "Ninguém esperando resposta"}
+            </h2>
+            <p className={`mt-0.5 text-[0.8125rem] ${waiting.length ? "text-paper/65" : "muted"}`}>
+              {waiting.length ? "Responderam com interesse. A automação está pausada nessas conversas." : "Quando um cliente responder com interesse, ele aparece aqui e você recebe um alerta na tela."}
+            </p>
+          </div>
+          {waiting.length > 0 && <Link href="/inbox?tab=attention" className="btn btn-sm shrink-0 bg-mint text-forest hover:bg-[#5fe0af]">Atender</Link>}
+        </div>
+        {waiting.length > 0 && (
+          <ul className="border-t border-white/10">
+            {waiting.map(({ c, name, city }) => (
+              <li key={c.id} className="border-b border-white/10 last:border-0">
+                <Link href={`/inbox?c=${c.id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-white/[0.04]">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-mint text-[0.8125rem] font-bold text-forest">{(name ?? c.contactName ?? "?").slice(0, 1).toUpperCase()}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-semibold">
+                      {name ?? c.contactName ?? formatBrPhone(c.phoneE164)}
+                      {city && <span className="font-normal text-paper/55"> em {city}</span>}
+                    </div>
+                    <div className="truncate text-[0.8125rem] text-paper/65">“{c.summary}”</div>
+                  </div>
+                  {c.lastIntent && <span className="hidden rounded-md bg-white/10 px-2 py-0.5 text-[0.75rem] font-semibold sm:inline">{INTENT_LABEL[c.lastIntent] ?? c.lastIntent}</span>}
+                  <span className="w-16 shrink-0 text-right text-[0.75rem] text-paper/55">{timeAgo(c.handoffAt)}</span>
                 </Link>
               </li>
             ))}
-          </ol>
-        </Card>
-      )}
+          </ul>
+        )}
+      </section>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Stat label="Leads" value={total.toLocaleString("pt-BR")} />
-        <Stat label="Demonstrações" value={previews?.n ?? 0} />
-        <Stat label="Interessados" value={interested} tone="accent" />
+        <Stat label="Sites gerados" value={sites?.n ?? 0} />
         <Stat label="Contatados" value={contacted} hint={`${sentToday?.n ?? 0} hoje`} />
-        <Stat label="Responderam" value={replied} />
+        <Stat label="Responderam" value={replied} hint={contacted ? `${Math.round((replied / contacted) * 100)}% dos contatados` : undefined} />
         <Stat label="Fechados" value={won} />
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-        <Card tour="hot" title={<span className="inline-flex items-center gap-2"><Flame size={16} className="text-brand-500" /> Leads aguardando você</span>} action={<Link href="/inbox" className="muted text-xs font-semibold hover:underline">Ver inbox</Link>}>
-          {hot.length === 0 ? (
-            <p className="muted text-sm">Nenhum lead aguardando atendimento. Quando alguém demonstrar interesse, aparece aqui e você recebe um alerta.</p>
+      <div className="mt-6 grid gap-6 lg:grid-cols-[1.3fr_1fr]">
+        <Card title="Funil" description="Quantas empresas chegaram a cada etapa.">
+          <dl className="space-y-3.5">
+            {funnel.map((f, i) => (
+              <div key={f.label} className="grid grid-cols-[140px_1fr_48px] items-center gap-3">
+                <dt className="truncate text-[0.8125rem] font-medium">{f.label}</dt>
+                <div className="h-2 overflow-hidden rounded-full bg-[var(--surface-2)]">
+                  <div className="h-full rounded-full" style={{ width: `${f.v ? Math.max(3, (f.v / maxF) * 100) : 0}%`, background: i === funnel.length - 1 ? "var(--color-mint-600)" : "var(--primary)" }} />
+                </div>
+                <dd className="text-right text-[0.8125rem] font-semibold tabular-nums">{f.v}</dd>
+              </div>
+            ))}
+          </dl>
+        </Card>
+
+        <Card title="Leads por etapa" action={<Link href="/leads" className="btn btn-quiet btn-sm">Ver todos</Link>}>
+          {stagesWithLeads.length === 0 ? (
+            <p className="muted text-sm">Nenhum lead ainda. Comece pela prospecção.</p>
           ) : (
-            <ul className="-my-2 divide-y divide-[var(--line)]">
-              {hot.map(({ c, name, city }) => (
-                <li key={c.id}>
-                  <Link href={`/inbox?c=${c.id}`} className="flex items-center gap-3 py-3">
-                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-900 text-sm font-bold text-brand-500">{(name ?? c.contactName ?? "?").slice(0, 1)}</span>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-semibold">{name ?? c.contactName ?? c.phoneE164}{city ? <span className="muted font-normal"> · {city}</span> : null}</div>
-                      <div className="muted truncate text-xs">{c.summary}</div>
-                    </div>
-                    <Badge tone="amber">{c.lastIntent?.replace(/_/g, " ") ?? "novo"}</Badge>
-                    <span className="muted w-12 text-right text-xs">{timeAgo(c.handoffAt)}</span>
-                    <ArrowRight size={14} className="muted" />
+            <ul className="-my-1.5 divide-y divide-[var(--line)]">
+              {stagesWithLeads.map((st) => (
+                <li key={st}>
+                  <Link href={`/leads?stage=${st}`} className="flex items-center justify-between py-2 text-sm hover:text-[var(--primary)]">
+                    <span>{STAGE_LABEL[st]}</span>
+                    <Badge>{stageRows.find((r) => r.stage === st)?.n ?? 0}</Badge>
                   </Link>
                 </li>
               ))}
             </ul>
           )}
         </Card>
-
-        <Card title="Funil comercial">
-          <div className="space-y-3">
-            {funnel.map((f, i) => (
-              <div key={f.label}>
-                <div className="mb-1 flex justify-between text-xs">
-                  <span className="font-medium">{f.label}</span>
-                  <span className="muted tabular-nums">
-                    {f.v}
-                    {i > 0 && funnel[i - 1]!.v > 0 ? ` · ${Math.round((f.v / funnel[i - 1]!.v) * 100)}%` : ""}
-                  </span>
-                </div>
-                <div className="h-2.5 overflow-hidden rounded-full bg-[var(--panel-2)]">
-                  <div className="h-full rounded-full" style={{ width: `${Math.max(2, (f.v / maxF) * 100)}%`, background: i === funnel.length - 1 ? "#39D79B" : "#102F29", opacity: i === funnel.length - 1 ? 1 : 0.85 - i * 0.12 }} />
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="muted mt-5 grid grid-cols-3 gap-2 border-t border-[var(--line)] pt-4 text-xs">
-            <div><div className="text-base font-bold text-[var(--ink)]">{sentToday?.n ?? 0}</div>contatos hoje</div>
-            <div><div className="text-base font-bold text-[var(--ink)]">{realInstances.filter((i) => i.status === "open").length}/{realInstances.length}</div>números online</div>
-            <div><div className="text-base font-bold text-[var(--ink)]">US$ {((aiSpend?.v ?? 0) / 1e6).toFixed(2)}</div>IA no mês{llmConfigured() ? "" : " (off)"}</div>
-          </div>
-        </Card>
       </div>
-
-      <Card className="mt-6" title="Leads por etapa">
-        <div className="flex flex-wrap gap-2">
-          {LEAD_STAGES.map((st) => {
-            const n = stageRows.find((r) => r.stage === st)?.n ?? 0;
-            return (
-              <Link key={st} href={`/leads?stage=${st}`} className="rounded-lg border border-[var(--line)] px-3 py-2 text-sm hover:border-[var(--accent)]">
-                <span className="font-bold tabular-nums">{n}</span> <span className="muted">{STAGE_LABEL[st]}</span>
-              </Link>
-            );
-          })}
-        </div>
-      </Card>
     </>
   );
 }

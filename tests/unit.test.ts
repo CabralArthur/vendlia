@@ -87,10 +87,10 @@ describe("intent rules (pt-BR)", () => {
 describe("connectors", () => {
   const p = { city: "Recife", state: "PE", segment: "barbearia" as const };
   it("builds an Overpass query scoped to the city", () => {
-    const q = buildOverpassQuery(p);
-    expect(q).toContain('area["ISO3166-2"="BR-PE"]');
-    expect(q).toContain('"name"~"^r[eéèê][cç][iíì]f[eéèê]$",i');
-    expect(q).toContain('nwr["shop"="hairdresser"]');
+    expect(buildOverpassQuery(p, 3600000123)).toContain("area(id:3600000123)->.a;");
+    const fallback = buildOverpassQuery(p);
+    expect(fallback).toContain('"name"~"^r[eéèê][cç][iíì]f[eéèê]$",i');
+    expect(fallback).toContain('nwr["shop"="barber"](area.a);');
   });
   it("matches city names without accents or case", () => {
     const re = new RegExp(cityRegex("sao paulo"), "i");

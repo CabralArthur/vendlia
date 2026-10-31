@@ -47,7 +47,7 @@ export async function generateSiteForLead(orgId: string, leadId: string, opts: {
     siteId = w!.id;
     await db.insert(websiteVersions).values({ websiteId: siteId, version: 1, template, accent: THEMES[template].accent, content, note: "Versão inicial" });
   }
-  await logLeadEvent(orgId, leadId, "preview", `Demonstração ${existing ? "regenerada" : "criada"} (${content.generatedBy === "llm" ? "IA" : "regras"})`, { siteId });
+  await logLeadEvent(orgId, leadId, "preview", `Site de demonstração ${existing ? "gerado de novo" : "gerado"}`, { siteId });
   await advanceStage(orgId, leadId, "preview_ready");
   await publish(orgId, { type: "lead", leadId });
   return siteId;

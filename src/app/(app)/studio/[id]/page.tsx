@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { and, desc, eq } from "drizzle-orm";
 import { requireSession } from "@/server/auth";
 import { db, websites, websiteVersions, leads, businesses, TEMPLATES } from "@/server/db";
-import { Badge, Card, Field, Notice, PageHeader, timeAgo } from "@/components/ui";
+import { Badge, Card, Field, Notice, PageHeader, timeAgo, SITE_STATUS_LABEL } from "@/components/ui";
 import { Flash } from "@/components/flash";
 import { Submit } from "@/components/submit";
 import { THEMES } from "@/sites/themes";
@@ -13,7 +13,7 @@ import { env } from "@/server/env";
 import { publishAction, rollbackAction, saveSiteAction, setDomainAction, unpublishAction } from "../../_actions/sites";
 import { ExternalLink } from "lucide-react";
 
-export const metadata = { title: "Website Studio" };
+export const metadata = { title: "Editar site" };
 
 export default async function StudioPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; err?: string }> }) {
   const s = await requireSession();
@@ -33,56 +33,54 @@ export default async function StudioPage({ params, searchParams }: { params: Pro
   return (
     <>
       <PageHeader
-        title="Website Studio"
-        subtitle={<><Link href={`/leads/${w.leadId}`} className="underline">{lb?.b.name}</Link> · v{w.version} · <Badge tone={w.status === "published" ? "green" : "neutral"}>{w.status}</Badge></>}
-        actions={<a href={previewUrl(w)} target="_blank" rel="noreferrer" className="btn btn-ghost"><ExternalLink size={14} /> Abrir prévia</a>}
+        title="Editar site"
+        back={<Link href={`/leads/${w.leadId}`} className="muted hover:text-[var(--ink)]">{lb?.b.name ?? "Lead"}</Link>}
+        subtitle={<span className="inline-flex items-center gap-2">Versão {w.version} <Badge tone={(SITE_STATUS_LABEL[w.status] ?? ["", "neutral"])[1]}>{(SITE_STATUS_LABEL[w.status] ?? [w.status])[0]}</Badge></span>}
+        actions={<a href={previewUrl(w)} target="_blank" rel="noreferrer" className="btn btn-secondary"><ExternalLink size={15} /> Ver como o cliente</a>}
       />
       <Flash sp={sp} />
-      <div className="grid gap-6 xl:grid-cols-[1fr_1.05fr]">
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
         <form action={saveSiteAction} className="space-y-6">
           <input type="hidden" name="siteId" value={w.id} />
           <Card title="Aparência">
             <div className="grid gap-3 sm:grid-cols-[1fr_140px]">
-              <Field label="Template">
+              <Field label="Modelo">
                 <select className="field" name="template" defaultValue={w.template}>{TEMPLATES.map((t) => <option key={t} value={t}>{THEMES[t].label}</option>)}</select>
               </Field>
-              <Field label="Cor de destaque"><input className="field h-[38px] !p-1" type="color" name="accent" defaultValue={w.accent} /></Field>
+              <Field label="Cor de destaque"><input className="field" type="color" name="accent" defaultValue={w.accent} /></Field>
             </div>
           </Card>
           <Card title="Conteúdo">
             <div className="grid gap-3">
-              <Field label="Nome exibido"><input className="field" name="businessName" defaultValue={c.businessName} /></Field>
+              <Field label="Nome da empresa no site"><input className="field" name="businessName" defaultValue={c.businessName} /></Field>
               <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="Rótulo (eyebrow)"><input className="field" name="tagline" defaultValue={c.tagline} /></Field>
+                <Field label="Texto acima do título"><input className="field" name="tagline" defaultValue={c.tagline} /></Field>
                 <Field label="Texto do botão"><input className="field" name="ctaLabel" defaultValue={c.ctaLabel} /></Field>
               </div>
               <Field label="Título principal"><input className="field" name="heroTitle" defaultValue={c.heroTitle} /></Field>
               <Field label="Subtítulo"><textarea className="field min-h-16" name="heroSubtitle" defaultValue={c.heroSubtitle} /></Field>
-              <Field label="Sobre"><textarea className="field min-h-24" name="about" defaultValue={c.about} /></Field>
-              <Field label="Serviços" hint="Um por linha. Formato: Nome | descrição (opcional)"><textarea className="field min-h-24 font-mono text-xs" name="services" defaultValue={pairs(c.services, (x) => `${x.name}${x.description ? ` | ${x.description}` : ""}`)} /></Field>
-              <Field label="Destaques" hint="Título | descrição"><textarea className="field min-h-20 font-mono text-xs" name="highlights" defaultValue={pairs(c.highlights, (x) => `${x.title} | ${x.description}`)} /></Field>
-              <Field label="Perguntas frequentes" hint="Pergunta | resposta"><textarea className="field min-h-20 font-mono text-xs" name="faq" defaultValue={pairs(c.faq, (x) => `${x.question} | ${x.answer}`)} /></Field>
+              <Field label="Sobre a empresa"><textarea className="field min-h-24" name="about" defaultValue={c.about} /></Field>
+              <Field label="Serviços" hint="Um por linha. Para descrever, use uma barra: Corte | Inclui lavagem"><textarea className="field min-h-24 " name="services" defaultValue={pairs(c.services, (x) => `${x.name}${x.description ? ` | ${x.description}` : ""}`)} /></Field>
+              <Field label="Destaques" hint="Um por linha, no formato: Título | descrição"><textarea className="field min-h-20 " name="highlights" defaultValue={pairs(c.highlights, (x) => `${x.title} | ${x.description}`)} /></Field>
+              <Field label="Perguntas frequentes" hint="Uma por linha, no formato: Pergunta | resposta"><textarea className="field min-h-20 " name="faq" defaultValue={pairs(c.faq, (x) => `${x.question} | ${x.answer}`)} /></Field>
             </div>
           </Card>
-          <Card title="Contato e SEO">
+          <Card title="Contato e Google">
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="WhatsApp (com DDI)"><input className="field" name="whatsapp" defaultValue={c.contact.whatsapp ?? ""} placeholder="5581999999999" /></Field>
+              <Field label="WhatsApp" hint="Com 55 e DDD, só números"><input className="field" name="whatsapp" defaultValue={c.contact.whatsapp ?? ""} placeholder="5581999999999" /></Field>
               <Field label="Instagram"><input className="field" name="instagram" defaultValue={c.contact.instagram ?? ""} /></Field>
               <Field label="Endereço"><input className="field" name="address" defaultValue={c.contact.address ?? ""} /></Field>
               <Field label="Horário"><input className="field" name="openingHours" defaultValue={c.contact.openingHours ?? ""} /></Field>
               <Field label="E-mail"><input className="field" name="email" defaultValue={c.contact.email ?? ""} /></Field>
-              <Field label="Título SEO"><input className="field" name="seoTitle" defaultValue={c.seo.title} maxLength={70} /></Field>
-              <div className="sm:col-span-2"><Field label="Descrição SEO"><textarea className="field min-h-14" name="seoDescription" defaultValue={c.seo.description} maxLength={160} /></Field></div>
-              <div className="sm:col-span-2"><Field label="Pendências de revisão" hint="Itens não confirmados com o cliente (um por linha). Apague quando confirmar."><textarea className="field min-h-14 text-xs" name="pendingReview" defaultValue={c.pendingReview.join("\n")} /></Field></div>
+              <Field label="Título no Google"><input className="field" name="seoTitle" defaultValue={c.seo.title} maxLength={70} /></Field>
+              <div className="sm:col-span-2"><Field label="Descrição no Google"><textarea className="field min-h-14" name="seoDescription" defaultValue={c.seo.description} maxLength={160} /></Field></div>
+              <div className="sm:col-span-2"><Field label="A confirmar com o cliente" hint="Um item por linha. Apague cada um quando o cliente confirmar."><textarea className="field min-h-14 text-xs" name="pendingReview" defaultValue={c.pendingReview.join("\n")} /></Field></div>
             </div>
           </Card>
-          <div className="sticky bottom-4 z-10 flex justify-end"><Submit className="btn btn-dark shadow-lg" pendingText="Salvando…">Salvar nova versão</Submit></div>
+          <div className="sticky bottom-0 z-10 -mx-1 flex items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-[var(--line)] bg-[var(--surface)]/95 px-4 py-3 backdrop-blur"><span className="muted text-[0.8125rem]">Cada salvamento vira uma nova versão. O site no ar só muda quando você publicar.</span><Submit className="btn btn-primary" pendingText="Salvando…">Salvar versão</Submit></div>
         </form>
 
         <div className="space-y-6">
-          <Card title="Prévia" className="[&>div]:p-0">
-            <iframe key={w.version} src={`/s/${w.slug}?k=${w.previewToken}&embed=1`} className="h-[640px] w-full rounded-b-[14px]" title="Prévia do site" />
-          </Card>
 
           <Card tour="studio-publish" title="Publicação">
             {w.status === "published" ? (
@@ -109,11 +107,15 @@ export default async function StudioPage({ params, searchParams }: { params: Pro
             </div>
           </Card>
 
+          <Card title="Prévia" description="Mostra a última versão salva." flush>
+            <iframe key={w.version} src={`/s/${w.slug}?k=${w.previewToken}&embed=1`} className="h-[560px] w-full rounded-b-[var(--radius-lg)] bg-white" title="Prévia do site" />
+          </Card>
+
           <Card title="Domínio próprio">
             <form action={setDomainAction} className="flex gap-2">
               <input type="hidden" name="siteId" value={w.id} />
               <input className="field" name="domain" defaultValue={w.customDomain ?? ""} placeholder="www.barbeariadoze.com.br" />
-              <Submit className="btn btn-ghost">Salvar</Submit>
+              <Submit className="btn btn-secondary">Salvar</Submit>
             </form>
             <div className="muted mt-3 space-y-1 text-xs">
               <p>1. No Railway, serviço <b>web</b> → Settings → Networking → <b>Custom Domain</b> → adicione o domínio.</p>
@@ -131,7 +133,7 @@ export default async function StudioPage({ params, searchParams }: { params: Pro
                     <form action={rollbackAction}>
                       <input type="hidden" name="siteId" value={w.id} />
                       <input type="hidden" name="version" value={v.version} />
-                      <Submit className="btn btn-ghost !py-1 text-xs">Restaurar</Submit>
+                      <Submit className="btn btn-quiet btn-sm">Restaurar</Submit>
                     </form>
                   )}
                 </li>

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { and, asc, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { requireSession } from "@/server/auth";
 import { db, conversations, messages, leads, businesses, intentClassifications, whatsappInstances, websites, users, type ConversationState } from "@/server/db";
-import { Badge, Card, Empty, StageBadge, timeAgo } from "@/components/ui";
+import { Badge, Card, Empty, StageBadge, timeAgo, CONVERSATION_LABEL, INTENT_LABEL } from "@/components/ui";
 import { Flash } from "@/components/flash";
 import { Submit } from "@/components/submit";
 import { Composer, ScrollBottom } from "@/components/composer";
@@ -14,16 +14,16 @@ import { Check, CheckCheck, Clock, AlertTriangle, Bot, User } from "lucide-react
 
 export const metadata = { title: "Inbox" };
 
-const STATE: Record<ConversationState, [string, "amber" | "green" | "blue" | "neutral" | "red"]> = {
-  AI_ACTIVE: ["Automação", "blue"],
-  HUMAN_REQUESTED: ["Aguardando humano", "amber"],
-  HUMAN_ASSIGNED: ["Atribuída", "amber"],
-  HUMAN_ACTIVE: ["Em atendimento", "green"],
-  RESOLVED: ["Encerrada", "neutral"],
+const STATE: Record<ConversationState, [string, "amber" | "green" | "blue" | "neutral" | "red" | "signal"]> = {
+  AI_ACTIVE: [CONVERSATION_LABEL.AI_ACTIVE!, "neutral"],
+  HUMAN_REQUESTED: [CONVERSATION_LABEL.HUMAN_REQUESTED!, "signal"],
+  HUMAN_ASSIGNED: [CONVERSATION_LABEL.HUMAN_ASSIGNED!, "amber"],
+  HUMAN_ACTIVE: [CONVERSATION_LABEL.HUMAN_ACTIVE!, "green"],
+  RESOLVED: [CONVERSATION_LABEL.RESOLVED!, "neutral"],
 };
 
 const TABS = [
-  { id: "attention", label: "Precisa de você" },
+  { id: "attention", label: "Para você" },
   { id: "all", label: "Todas" },
   { id: "mine", label: "Minhas" },
   { id: "resolved", label: "Encerradas" },
@@ -70,12 +70,12 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   return (
     <>
       <Flash sp={sp} />
-      <div className="panel grid h-[calc(100vh-7rem)] min-h-[560px] overflow-hidden lg:grid-cols-[320px_1fr_300px]">
+      <div className="panel grid h-[calc(100vh-7rem)] min-h-[560px] overflow-hidden lg:grid-cols-[340px_1fr_300px]">
         {/* Column 1: conversations */}
         <div className="flex min-h-0 flex-col border-b border-[var(--line)] lg:border-r lg:border-b-0">
-          <div className="flex gap-1 overflow-x-auto border-b border-[var(--line)] p-2">
+          <div className="flex gap-1 overflow-x-auto border-b border-[var(--line)] bg-[var(--surface-2)] p-1.5">
             {TABS.map((t) => (
-              <Link key={t.id} href={`/inbox?tab=${t.id}`} className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold ${tab === t.id ? "bg-brand-900 text-paper" : "muted hover:bg-[var(--panel-2)]"}`}>{t.label}</Link>
+              <Link key={t.id} href={`/inbox?tab=${t.id}`} aria-current={tab === t.id ? "page" : undefined} className={`shrink-0 rounded-md px-2.5 py-1.5 text-[0.8125rem] font-semibold ${tab === t.id ? "bg-[var(--surface)] text-[var(--ink)] shadow-sm ring-1 ring-[var(--line)]" : "muted hover:text-[var(--ink)]"}`}>{t.label}</Link>
             ))}
           </div>
           <ul className="scroll-thin min-h-0 flex-1 overflow-y-auto">
@@ -83,7 +83,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
             {list.map(({ c, name, last }) => (
               <li key={c.id}>
                 <Link href={`/inbox?tab=${tab}&c=${c.id}`} className={`flex gap-3 border-b border-[var(--line)] px-3 py-3 ${c.id === activeId ? "bg-[var(--panel-2)]" : "hover:bg-[var(--panel-2)]"}`}>
-                  <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-bold ${c.state === "HUMAN_REQUESTED" ? "bg-brand-500 text-brand-900" : "bg-brand-900 text-paper"}`}>{(name ?? c.contactName ?? "#").slice(0, 1).toUpperCase()}</span>
+                  <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-bold ${c.state === "HUMAN_REQUESTED" ? "bg-mint text-forest" : "bg-[var(--surface-2)] text-[var(--ink)] ring-1 ring-[var(--line)]"}`}>{(name ?? c.contactName ?? "#").slice(0, 1).toUpperCase()}</span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
                       <span className="truncate text-sm font-semibold">{name ?? c.contactName ?? formatBrPhone(c.phoneE164)}</span>
@@ -92,7 +92,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                     <div className="muted truncate text-xs">{last}</div>
                     <div className="mt-1 flex items-center gap-1.5">
                       <Badge tone={STATE[c.state][1]}>{STATE[c.state][0]}</Badge>
-                      {c.unread > 0 && <span className="rounded-full bg-brand-500 px-1.5 text-[10px] font-bold text-brand-900">{c.unread}</span>}
+                      {c.unread > 0 && <span className="rounded-full bg-forest px-1.5 text-[0.6875rem] font-bold leading-4 text-paper" aria-label={`${c.unread} não lidas`}>{c.unread}</span>}
                     </div>
                   </div>
                 </Link>
@@ -117,7 +117,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
               <div className="scroll-thin min-h-0 flex-1 space-y-2 overflow-y-auto bg-[var(--bg)] px-4 py-4">
                 {thread.map((m) => (
                   <div key={m.id} className={`flex ${m.direction === "out" ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[78%] rounded-2xl px-3.5 py-2 text-sm shadow-sm ${m.direction === "out" ? (m.author === "ai" ? "bg-sky-100 text-sky-950" : "bg-brand-900 text-paper") : "panel"}`}>
+                    <div className={`max-w-[78%] rounded-xl px-3.5 py-2 text-sm ${m.direction === "out" ? (m.author === "ai" || m.author === "system" ? "bg-[var(--info-bg)] text-[#1849a9] ring-1 ring-[#b2ddff]" : "bg-forest text-paper") : "bg-[var(--surface)] ring-1 ring-[var(--line)]"}`}>
                       <div className="whitespace-pre-wrap break-words">{m.body}</div>
                       <div className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${m.direction === "out" && m.author !== "ai" ? "text-paper/60" : "muted"}`}>
                         {m.author === "ai" && <><Bot size={11} /> IA ·</>}
@@ -127,7 +127,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                         {new Date(m.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Recife" })}
                         {m.direction === "out" && (m.status === "queued" ? <Clock size={11} /> : m.status === "failed" ? <AlertTriangle size={11} className="text-red-400" /> : m.status === "read" ? <CheckCheck size={12} className="text-brand-500" /> : m.status === "delivered" ? <CheckCheck size={12} /> : m.status === "canceled" ? <span>cancelada</span> : <Check size={12} />)}
                       </div>
-                      {m.status === "failed" && m.error && <div className="mt-1 text-[10px] text-red-400">{m.error.slice(0, 120)}</div>}
+                      {m.status === "failed" && m.error && <div className="mt-1 text-[0.6875rem] opacity-80">{m.error.slice(0, 120)}</div>}
                     </div>
                   </div>
                 ))}
@@ -153,14 +153,12 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                 </form>
               )}
               {cls && (
-                <Card title="Leitura da IA" className="[&>div]:p-4">
+                <Card title="O que o cliente quer" className="[&>div]:p-4">
                   <div className="flex flex-wrap gap-1.5">
-                    <Badge tone="amber">{cls.intent.replace(/_/g, " ")}</Badge>
-                    <Badge>{Math.round(cls.confidence * 100)}%</Badge>
-                    <Badge tone={cls.urgency === "high" ? "red" : "neutral"}>urgência {cls.urgency}</Badge>
+                    <Badge tone="amber">{INTENT_LABEL[cls.intent] ?? cls.intent}</Badge>
+                    {cls.urgency === "high" && <Badge tone="red">Responder logo</Badge>}
                   </div>
-                  <p className="mt-2"><b>Ação:</b> {cls.suggestedAction}</p>
-                  <p className="muted mt-1 text-xs">{cls.reason} · {cls.model}</p>
+                  <p className="mt-2.5 text-[0.8125rem]"><span className="font-semibold">Sugestão:</span> {cls.suggestedAction}</p>
                 </Card>
               )}
               {active.lead && active.b && (
@@ -169,7 +167,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                   <div className="muted text-xs">{[active.b.neighborhood, active.b.city].filter(Boolean).join(", ")}</div>
                   <div className="mt-2"><StageBadge stage={active.lead.stage} /></div>
                   {site && <a href={previewUrl(site)} target="_blank" rel="noreferrer" className="mt-3 block text-xs font-semibold underline">Ver demonstração enviada ↗</a>}
-                  <Link href={`/leads/${active.lead.id}`} className="btn btn-dark mt-3 w-full">Abrir lead</Link>
+                  <Link href={`/leads/${active.lead.id}`} className="btn btn-secondary mt-3 w-full">Abrir lead</Link>
                 </Card>
               )}
               <div className="grid gap-2">
@@ -177,14 +175,14 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                   <form action={setConversationState}>
                     <input type="hidden" name="conversationId" value={active.c.id} />
                     <input type="hidden" name="to" value="AI_ACTIVE" />
-                    <Submit className="btn btn-ghost w-full"><Bot size={15} /> Devolver para automação</Submit>
+                    <Submit className="btn btn-secondary w-full"><Bot size={15} /> Devolver para automação</Submit>
                   </form>
                 )}
                 {active.c.state !== "RESOLVED" && (
                   <form action={setConversationState}>
                     <input type="hidden" name="conversationId" value={active.c.id} />
                     <input type="hidden" name="to" value="RESOLVED" />
-                    <Submit className="btn btn-ghost w-full">Encerrar conversa</Submit>
+                    <Submit className="btn btn-secondary w-full">Encerrar conversa</Submit>
                   </form>
                 )}
               </div>

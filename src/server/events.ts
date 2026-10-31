@@ -1,6 +1,7 @@
 import { db, leadEvents, leads, notifications, auditLogs, type LeadStage } from "./db";
 import { and, eq } from "drizzle-orm";
 import { publish } from "./realtime";
+import { STAGE_LABEL } from "@/lib/labels";
 
 export async function logLeadEvent(
   orgId: string,
@@ -39,7 +40,7 @@ export async function advanceStage(orgId: string, leadId: string, to: LeadStage,
 
 export async function setStage(orgId: string, leadId: string, to: LeadStage, actorId?: string | null, from?: string) {
   await db.update(leads).set({ stage: to }).where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)));
-  await logLeadEvent(orgId, leadId, "stage", `Etapa alterada${from ? ` de ${from}` : ""} para ${to}`, { from, to }, actorId);
+  await logLeadEvent(orgId, leadId, "stage", `Etapa: ${from ? `${STAGE_LABEL[from as LeadStage] ?? from} → ` : ""}${STAGE_LABEL[to]}`, { from, to }, actorId);
   await publish(orgId, { type: "lead", leadId });
 }
 

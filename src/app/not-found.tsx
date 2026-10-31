@@ -6,7 +6,7 @@ export default function NotFound() {
       <div>
         <div className="text-6xl font-bold tracking-tight">404</div>
         <p className="muted mt-2">Página não encontrada.</p>
-        <Link href="/" className="btn btn-dark mt-6">Voltar</Link>
+        <Link href="/" className="btn btn-primary mt-6">Voltar</Link>
       </div>
     </main>
   );

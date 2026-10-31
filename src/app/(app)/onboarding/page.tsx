@@ -89,12 +89,12 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
                 <Link
                   href={`/onboarding?step=${i + 1}`}
                   aria-current={i === idx ? "step" : undefined}
-                  className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${i === idx ? "bg-[var(--panel-2)] font-semibold" : "hover:bg-[var(--panel-2)]"}`}
+                  className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm ${i === idx ? "bg-[var(--surface-2)] font-semibold" : "hover:bg-[var(--surface-2)]"}`}
                 >
                   {st.done ? (
-                    <CheckCircle2 size={20} className="shrink-0 text-brand-500" />
+                    <CheckCircle2 size={20} className="shrink-0 text-[var(--color-mint-600)]" />
                   ) : (
-                    <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] font-bold ${i === idx ? "bg-brand-900 text-paper" : "muted border border-[var(--line)]"}`}>{i + 1}</span>
+                    <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] font-bold ${i === idx ? "bg-forest text-paper" : "muted border border-[var(--line)]"}`}>{i + 1}</span>
                   )}
                   <span className={st.done && i !== idx ? "muted" : ""}>{st.title}</span>
                 </Link>
@@ -104,11 +104,11 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
         </nav>
 
         <section className="panel p-6 sm:p-8">
-          <div className="muted text-xs font-semibold uppercase tracking-wider">Passo {idx + 1} de {steps.length}</div>
+          <div className="muted text-[0.8125rem] font-medium">Passo {idx + 1} de {steps.length}</div>
           <h2 className="mt-1 flex flex-wrap items-center gap-2 text-2xl font-bold tracking-tight">
             {step.title}
             {step.done && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/12 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+              <span className="inline-flex items-center gap-1 rounded-md bg-[var(--ok-bg)] px-2 py-0.5 text-[0.75rem] font-semibold text-[var(--ok)] ring-1 ring-inset ring-[#abefc6]">
                 <CheckCircle2 size={13} /> feito
               </span>
             )}
@@ -125,24 +125,24 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
           <ol className="space-y-3">
             {guide.how.map((h, i) => (
               <li key={h} className="flex gap-3 text-sm">
-                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-900 text-xs font-bold text-brand-500">{i + 1}</span>
+                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-forest text-xs font-bold text-mint">{i + 1}</span>
                 <span className="pt-0.5">{h}</span>
               </li>
             ))}
           </ol>
 
-          <div className="mt-6 rounded-xl border border-brand-500/30 bg-brand-500/8 p-4 text-sm">
-            <div className="mb-1 flex items-center gap-1.5 font-semibold text-emerald-700 dark:text-brand-400"><Zap size={15} /> A Vendlia faz sozinha</div>
+          <div className="mt-6 rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface-2)] p-4 text-sm">
+            <div className="mb-1 flex items-center gap-1.5 font-semibold"><Zap size={15} className="text-[var(--color-mint-600)]" /> A Vendlia faz sozinha</div>
             <p className="muted">{guide.auto}</p>
           </div>
           {guide.tip && <p className="muted mt-3 text-xs"><b>Dica:</b> {guide.tip}</p>}
 
           <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] pt-5">
-            {idx > 0 ? <Link href={`/onboarding?step=${idx}`} className="btn btn-ghost"><ArrowLeft size={15} /> Anterior</Link> : <span />}
+            {idx > 0 ? <Link href={`/onboarding?step=${idx}`} className="btn btn-secondary"><ArrowLeft size={15} /> Anterior</Link> : <span />}
             <div className="flex flex-wrap gap-2">
-              <Link href={step.href} className={`btn ${step.done ? "btn-ghost" : "btn-primary"}`}>{step.cta} <ArrowRight size={15} /></Link>
+              <Link href={step.href} className={`btn ${step.done ? "btn-secondary" : "btn-primary"}`}>{step.cta} <ArrowRight size={15} /></Link>
               {idx < steps.length - 1 && (
-                <Link href={`/onboarding?step=${idx + 2}`} className={`btn ${step.done ? "btn-primary" : "btn-ghost"}`}>Próximo passo</Link>
+                <Link href={`/onboarding?step=${idx + 2}`} className={`btn ${step.done ? "btn-primary" : "btn-secondary"}`}>Próximo passo</Link>
               )}
             </div>
           </div>

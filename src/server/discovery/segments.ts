@@ -112,3 +112,10 @@ export const UF_DDD: Record<string, string> = {
   DF: "61", PA: "91", AM: "92", MA: "98", PB: "83", RN: "84", AL: "82", SE: "79", PI: "86", ES: "27",
   MT: "65", MS: "67", TO: "63", RO: "69", AC: "68", AP: "96", RR: "95",
 };
+
+export const UF_NAME: Record<string, string> = {
+  AC: "Acre", AL: "Alagoas", AP: "Amapá", AM: "Amazonas", BA: "Bahia", CE: "Ceará", DF: "Distrito Federal",
+  ES: "Espírito Santo", GO: "Goiás", MA: "Maranhão", MT: "Mato Grosso", MS: "Mato Grosso do Sul", MG: "Minas Gerais",
+  PA: "Pará", PB: "Paraíba", PR: "Paraná", PE: "Pernambuco", PI: "Piauí", RJ: "Rio de Janeiro", RN: "Rio Grande do Norte",
+  RS: "Rio Grande do Sul", RO: "Rondônia", RR: "Roraima", SC: "Santa Catarina", SP: "São Paulo", SE: "Sergipe", TO: "Tocantins",
+};

@@ -3,17 +3,18 @@ import { notFound } from "next/navigation";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { requireSession } from "@/server/auth";
 import { db, leads, businesses, businessSources, contactPoints, leadEvents, websites, conversations, messages, suppressionList, LEAD_STAGES, TEMPLATES } from "@/server/db";
-import { Badge, Card, Field, Notice, PageHeader, ScorePill, StageBadge, STAGE_LABEL, timeAgo } from "@/components/ui";
+import { Badge, Card, Check, Field, Notice, PageHeader, StageBadge, STAGE_LABEL, CONVERSATION_LABEL, PERMISSION_LABEL, SITE_STATUS_LABEL } from "@/components/ui";
 import { Flash } from "@/components/flash";
 import { Submit } from "@/components/submit";
-import { SEGMENTS } from "@/server/discovery/segments";
+import { SEGMENTS, segmentById } from "@/server/discovery/segments";
 import { outreachEligibility } from "@/server/scoring";
 import { getOrgSettings } from "@/server/org";
 import { previewUrl } from "@/server/whatsapp/service";
 import { formatBrPhone } from "@/lib/phone";
 import { addNote, generatePreview, sendOutreach, setContactPermission, setLeadStageAction, updateBusiness } from "../../_actions/leads";
 import { followUpNow } from "../../_actions/sites";
-import { ExternalLink, MessageCircle, Sparkles, Send } from "lucide-react";
+import { nextStep } from "@/lib/labels";
+import { ExternalLink, Send, PenLine, RefreshCw } from "lucide-react";
 
 const TEMPLATE_LABEL: Record<string, string> = { barber: "Barbearia / Salão", aesthetics: "Estética / Clínica", food: "Restaurante / Café", auto: "Oficina", services: "Serviços" };
 
@@ -49,172 +50,225 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
     hasPreview: !!site,
   });
 
+  const place = [b.neighborhood, b.city && b.state ? `${b.city}/${b.state}` : b.city].filter(Boolean).join(", ");
+  const SOURCE: Record<string, string> = { osm: "OpenStreetMap", google_places: "Google Maps", csv: "planilha", manual: "cadastro manual", brasilapi: "Receita Federal" };
+  const fmt = (d: Date) => d.toLocaleString("pt-BR", { timeZone: "America/Recife", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  const positives = lead.scoreFactors.filter((f) => f.kind !== "missing");
+  const missing = lead.scoreFactors.filter((f) => f.kind === "missing");
+  const siteStatus = site ? SITE_STATUS_LABEL[site.status] ?? [site.status, "neutral"] : null;
+
   return (
     <>
       <PageHeader
+        back={<Link href="/leads" className="muted hover:text-[var(--ink)]">Leads</Link>}
         title={b.name}
         subtitle={
           <span className="inline-flex flex-wrap items-center gap-2">
-            <StageBadge stage={lead.stage} /> <ScorePill score={lead.score} />
-            <span>{[b.neighborhood, b.city, b.state].filter(Boolean).join(" · ")}</span>
+            <StageBadge stage={lead.stage} />
+            <span>{segmentById(b.segment).label}{place ? ` em ${place}` : ""}</span>
           </span>
         }
         actions={
-          <form action={setLeadStageAction} className="flex gap-2">
+          <form action={setLeadStageAction} className="flex items-center gap-2">
             <input type="hidden" name="leadId" value={lead.id} />
-            <select name="stage" className="field !w-auto" defaultValue={lead.stage} aria-label="Etapa">
+            <select name="stage" className="field w-48" defaultValue={lead.stage} aria-label="Etapa do lead">
               {LEAD_STAGES.map((st) => <option key={st} value={st}>{STAGE_LABEL[st]}</option>)}
             </select>
-            <Submit className="btn btn-ghost">Mover</Submit>
+            <Submit className="btn btn-secondary">Alterar etapa</Submit>
           </form>
         }
       />
       <Flash sp={sp} />
 
-      <div className="grid gap-6 lg:grid-cols-[1.25fr_1fr]">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-6">
-          <Card title="Por que este lead?">
-            <div className="mb-3 text-sm"><span className="font-semibold">Próxima ação:</span> {lead.nextAction}</div>
-            <ul className="grid gap-1.5 text-sm sm:grid-cols-2">
-              {lead.scoreFactors.map((f) => (
-                <li key={f.label} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--panel-2)] px-3 py-1.5">
-                  <span className={f.kind === "missing" ? "muted" : ""}>{f.kind === "missing" ? `Falta: ${f.label}` : f.label}</span>
-                  {f.kind !== "missing" && <span className={`text-xs font-bold tabular-nums ${f.points < 0 ? "text-red-600" : "text-emerald-600"}`}>{f.points > 0 ? "+" : ""}{f.points}</span>}
-                </li>
-              ))}
-            </ul>
-            <div className="muted mt-3 text-xs">
-              Fontes: {sources.map((src) => `${src.source} (${src.license}${src.restrictions ? ` — ${src.restrictions}` : ""})`).join("; ") || "—"}
-            </div>
+          <Card
+            tour="lead-demo"
+            title="Site de demonstração"
+            description={site ? `Versão ${site.version}, aberto ${site.views} ${site.views === 1 ? "vez" : "vezes"} pelo cliente` : "Gerado só com os dados confirmados desta empresa."}
+            action={siteStatus && <Badge tone={siteStatus[1]}>{siteStatus[0]}</Badge>}
+          >
+            {site ? (
+              <>
+                <div className="overflow-hidden rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface-2)]">
+                  <div className="flex items-center gap-1.5 border-b border-[var(--line)] px-3 py-2" aria-hidden>
+                    <span className="h-2 w-2 rounded-full bg-[var(--line-strong)]" /><span className="h-2 w-2 rounded-full bg-[var(--line-strong)]" /><span className="h-2 w-2 rounded-full bg-[var(--line-strong)]" />
+                  </div>
+                  <iframe src={`/s/${site.slug}?k=${site.previewToken}&embed=1`} className="h-[340px] w-full bg-white" title={`Prévia do site de ${b.name}`} loading="lazy" />
+                </div>
+                {site.content.pendingReview.length > 0 && (
+                  <div className="mt-4">
+                    <Notice tone="warn" title="Confirmar com o cliente antes de publicar">
+                      {site.content.pendingReview.join("; ")}.
+                    </Notice>
+                  </div>
+                )}
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <Link href={`/studio/${site.id}`} className="btn btn-primary"><PenLine size={15} /> Editar e publicar</Link>
+                  <a href={previewUrl(site)} target="_blank" rel="noreferrer" className="btn btn-secondary"><ExternalLink size={15} /> Ver como o cliente</a>
+                  <form action={generatePreview} className="ml-auto flex items-center gap-2">
+                    <input type="hidden" name="leadId" value={lead.id} />
+                    <select name="template" className="field field-sm w-44" defaultValue={site.template} aria-label="Modelo do site">
+                      {TEMPLATES.map((t) => <option key={t} value={t}>{TEMPLATE_LABEL[t]}</option>)}
+                    </select>
+                    <Submit className="btn btn-quiet btn-sm" pendingText="Gerando…" confirm="Gerar o site de novo? As edições feitas no Studio ficam salvas no histórico de versões."><RefreshCw size={14} /> Gerar de novo</Submit>
+                  </form>
+                </div>
+              </>
+            ) : (
+              <form action={generatePreview} className="flex flex-wrap items-end gap-3">
+                <input type="hidden" name="leadId" value={lead.id} />
+                <Field label="Modelo" className="w-56">
+                  <select name="template" className="field" defaultValue="">
+                    <option value="">Escolher pelo tipo de negócio</option>
+                    {TEMPLATES.map((t) => <option key={t} value={t}>{TEMPLATE_LABEL[t]}</option>)}
+                  </select>
+                </Field>
+                <Submit className="btn btn-primary" pendingText="Gerando…">Gerar site</Submit>
+              </form>
+            )}
           </Card>
 
-          <Card title="Dados da empresa" action={<a className="muted text-xs font-semibold hover:underline" target="_blank" rel="noreferrer" href={`https://www.google.com/search?q=${encodeURIComponent(`${b.name} ${b.city ?? ""} site`)}`}>Verificar se tem site ↗</a>}>
-            <form action={updateBusiness} className="grid gap-3 sm:grid-cols-2">
-              <input type="hidden" name="leadId" value={lead.id} />
-              <Field label="Nome"><input className="field" name="name" defaultValue={b.name} required /></Field>
-              <Field label="Segmento">
-                <select className="field" name="segment" defaultValue={b.segment}>{SEGMENTS.map((sg) => <option key={sg.id} value={sg.id}>{sg.label}</option>)}</select>
-              </Field>
-              <Field label="WhatsApp / telefone"><input className="field" name="phone" defaultValue={b.phoneE164 ? formatBrPhone(b.phoneE164) : b.phone ?? ""} /></Field>
-              <Field label="Presença digital">
-                <select className="field" name="websiteStatus" defaultValue={b.websiteStatus}>
-                  <option value="confirmed_absent">Confirmado: não tem site</option>
-                  <option value="none_in_source">Fonte não indica site (não verificado)</option>
-                  <option value="social_only">Só redes sociais</option>
-                  <option value="has_website">Já tem site</option>
-                  <option value="unknown">Desconhecido</option>
-                </select>
-              </Field>
-              <Field label="Site atual (se houver)"><input className="field" name="website" defaultValue={b.website ?? ""} /></Field>
-              <Field label="Instagram"><input className="field" name="instagram" defaultValue={b.instagram ?? ""} placeholder="@perfil" /></Field>
-              <Field label="Endereço"><input className="field" name="address" defaultValue={b.address ?? ""} /></Field>
-              <Field label="Bairro"><input className="field" name="neighborhood" defaultValue={b.neighborhood ?? ""} /></Field>
-              <Field label="Cidade"><input className="field" name="city" defaultValue={b.city ?? ""} /></Field>
-              <Field label="UF"><input className="field" name="state" maxLength={2} defaultValue={b.state ?? ""} /></Field>
-              <Field label="CNPJ"><input className="field" name="cnpj" defaultValue={b.cnpj ?? ""} /></Field>
-              <Field label="E-mail"><input className="field" name="email" type="email" defaultValue={b.email ?? ""} /></Field>
-              <div className="sm:col-span-2"><Field label="Horário de funcionamento"><input className="field" name="openingHours" defaultValue={b.openingHours ?? ""} placeholder="Seg a Sáb, 9h às 19h" /></Field></div>
-              <div className="sm:col-span-2"><Field label="Serviços confirmados (um por linha)" hint="Só serviços confirmados aparecem no site sem aviso de revisão."><textarea className="field min-h-20" name="services" defaultValue={b.services.join("\n")} /></Field></div>
-              <div className="sm:col-span-2"><Field label="Descrição confirmada"><textarea className="field min-h-16" name="description" defaultValue={b.description ?? ""} /></Field></div>
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="active" defaultChecked={b.active} className="accent-[#39D79B]" /> Empresa ativa</label>
-              <div className="sm:text-right"><Submit>Salvar dados</Submit></div>
-            </form>
+          <Card title="Contato" description="Primeiro contato pelo WhatsApp com o link do site.">
+            {wa ? (
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-[var(--radius)] bg-[var(--surface-2)] px-4 py-3">
+                <div>
+                  <div className="font-semibold tabular-nums">{formatBrPhone(wa.value)}</div>
+                  <div className="muted text-[0.8125rem]">
+                    {wa.waExists === true ? "Tem WhatsApp" : wa.waExists === false ? "Sem WhatsApp neste número" : "WhatsApp ainda não verificado"}
+                    {" · "}
+                    {PERMISSION_LABEL[wa.permission] ?? wa.permission}
+                  </div>
+                </div>
+                <form action={setContactPermission} className="flex items-center gap-2">
+                  <input type="hidden" name="leadId" value={lead.id} />
+                  <input type="hidden" name="contactId" value={wa.id} />
+                  <select name="permission" className="field field-sm w-52" defaultValue={wa.permission === "unknown" ? "public_business" : wa.permission} aria-label="Permissão de contato">
+                    <option value="public_business">Telefone comercial público</option>
+                    <option value="opt_in">Autorizou contato</option>
+                    <option value="opted_out">Não contatar</option>
+                  </select>
+                  <Submit className="btn btn-secondary btn-sm">Salvar</Submit>
+                </form>
+              </div>
+            ) : (
+              <p className="muted mb-4 text-sm">Sem WhatsApp cadastrado. Adicione em “Dados da empresa”, logo abaixo.</p>
+            )}
+            {elig.eligible ? (
+              <form action={sendOutreach} className="flex flex-wrap items-center gap-3">
+                <input type="hidden" name="leadId" value={lead.id} />
+                <Submit className="btn btn-primary" pendingText="Enviando…"><Send size={15} /> Enviar primeiro contato</Submit>
+                <span className="muted text-[0.8125rem]">Sai em horário comercial, respeitando o limite diário do número.</span>
+              </form>
+            ) : (
+              <div>
+                <div className="text-sm font-medium">Primeiro contato indisponível:</div>
+                <ul className="muted mt-1 list-disc space-y-0.5 pl-5 text-[0.8125rem]">
+                  {elig.reasons.map((r) => <li key={r}>{r}</li>)}
+                </ul>
+              </div>
+            )}
+            {(lead.stage === "contacted" || convs.length > 0) && (
+              <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--line)] pt-4">
+                {convs.map((c) => (
+                  <Link key={c.id} href={`/inbox?c=${c.id}`} className="btn btn-secondary">Abrir conversa ({CONVERSATION_LABEL[c.state]?.toLowerCase()})</Link>
+                ))}
+                {lead.stage === "contacted" && (
+                  <form action={followUpNow}>
+                    <input type="hidden" name="leadId" value={lead.id} />
+                    <Submit className="btn btn-quiet">Enviar lembrete agora</Submit>
+                  </form>
+                )}
+              </div>
+            )}
           </Card>
 
-          <Card title="Histórico">
-            <form action={addNote} className="mb-4 flex gap-2">
+          <Card
+            title="Dados da empresa"
+            description="O site usa estes dados. Corrija o que estiver errado antes de gerar."
+            action={<a className="btn btn-quiet btn-sm" target="_blank" rel="noreferrer" href={`https://www.google.com/search?q=${encodeURIComponent(`${b.name} ${b.city ?? ""}`)}`}><ExternalLink size={14} /> Pesquisar no Google</a>}
+          >
+            <form action={updateBusiness} className="space-y-5">
               <input type="hidden" name="leadId" value={lead.id} />
-              <input className="field" name="note" placeholder="Adicionar anotação…" />
-              <Submit className="btn btn-ghost">Anotar</Submit>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Nome" required><input className="field" name="name" defaultValue={b.name} required /></Field>
+                <Field label="Tipo de negócio">
+                  <select className="field" name="segment" defaultValue={b.segment}>{SEGMENTS.map((sg) => <option key={sg.id} value={sg.id}>{sg.label}</option>)}</select>
+                </Field>
+                <Field label="WhatsApp ou telefone"><input className="field" name="phone" type="tel" inputMode="tel" defaultValue={b.phoneE164 ? formatBrPhone(b.phoneE164) : b.phone ?? ""} /></Field>
+                <Field label="Instagram" optional><input className="field" name="instagram" defaultValue={b.instagram ?? ""} placeholder="@perfil" /></Field>
+                <Field label="Já tem site?">
+                  <select className="field" name="websiteStatus" defaultValue={b.websiteStatus}>
+                    <option value="confirmed_absent">Não tem (confirmado)</option>
+                    <option value="none_in_source">Provavelmente não (não verificado)</option>
+                    <option value="social_only">Só Instagram ou redes sociais</option>
+                    <option value="has_website">Já tem site</option>
+                    <option value="unknown">Não sei</option>
+                  </select>
+                </Field>
+                <Field label="Endereço do site atual" optional><input className="field" name="website" defaultValue={b.website ?? ""} placeholder="www.…" /></Field>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-[2fr_1.2fr_1.2fr_80px]">
+                <Field label="Endereço"><input className="field" name="address" defaultValue={b.address ?? ""} /></Field>
+                <Field label="Bairro"><input className="field" name="neighborhood" defaultValue={b.neighborhood ?? ""} /></Field>
+                <Field label="Cidade"><input className="field" name="city" defaultValue={b.city ?? ""} /></Field>
+                <Field label="UF"><input className="field uppercase" name="state" maxLength={2} defaultValue={b.state ?? ""} /></Field>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Field label="Horário de funcionamento" className="sm:col-span-1"><input className="field" name="openingHours" defaultValue={b.openingHours ?? ""} placeholder="Seg a sáb, 9h às 19h" /></Field>
+                <Field label="CNPJ" optional><input className="field" name="cnpj" inputMode="numeric" defaultValue={b.cnpj ?? ""} /></Field>
+                <Field label="E-mail" optional><input className="field" name="email" type="email" defaultValue={b.email ?? ""} /></Field>
+              </div>
+              <Field label="Serviços confirmados" hint="Um por linha. Só o que o cliente confirmou; o resto aparece no site como pendente de revisão.">
+                <textarea className="field" name="services" rows={3} defaultValue={b.services.join("\n")} />
+              </Field>
+              <Field label="Apresentação do negócio" optional>
+                <textarea className="field" name="description" rows={2} defaultValue={b.description ?? ""} />
+              </Field>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] pt-4">
+                <Check name="active" label="Empresa em funcionamento" defaultChecked={b.active} />
+                <Submit className="btn btn-primary" pendingText="Salvando…">Salvar dados</Submit>
+              </div>
             </form>
-            <ol className="relative space-y-3 border-l border-[var(--line)] pl-4">
-              {events.map((e) => (
-                <li key={e.id} className="text-sm">
-                  <span className="absolute -left-[5px] mt-1.5 h-2.5 w-2.5 rounded-full border-2 border-[var(--panel)] bg-brand-500" />
-                  <div className={e.type === "note" ? "rounded-lg bg-[var(--panel-2)] px-3 py-2" : ""}>{e.message}</div>
-                  <div className="muted text-xs">{new Date(e.createdAt).toLocaleString("pt-BR", { timeZone: "America/Recife" })} · {e.type}</div>
-                </li>
-              ))}
-            </ol>
           </Card>
         </div>
 
         <div className="space-y-6">
-          <Card tour="lead-demo" title={<span className="inline-flex items-center gap-2"><Sparkles size={15} /> Demonstração</span>}>
-            {site ? (
-              <>
-                <div className="mb-3 overflow-hidden rounded-lg border border-[var(--line)]">
-                  <iframe src={`/s/${site.slug}?k=${site.previewToken}&embed=1`} className="h-64 w-full origin-top-left" title="Prévia" loading="lazy" />
-                </div>
-                <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-                  <Badge tone={site.status === "published" ? "green" : "neutral"}>{site.status}</Badge>
-                  <span className="muted">v{site.version} · {site.views} visualizações · {site.content.generatedBy === "llm" ? "texto por IA" : "texto por regras"}</span>
-                </div>
-                {site.content.pendingReview.length > 0 && (
-                  <Notice tone="warn">Pendente de confirmação com o cliente: {site.content.pendingReview.join("; ")}</Notice>
-                )}
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <a href={previewUrl(site)} target="_blank" rel="noreferrer" className="btn btn-ghost"><ExternalLink size={14} /> Abrir</a>
-                  <Link href={`/studio/${site.id}`} className="btn btn-dark">Editar no Studio</Link>
-                </div>
-              </>
-            ) : (
-              <p className="muted mb-3 text-sm">Gere uma landing page personalizada com os dados verificados desta empresa.</p>
+          <Card title="Nota de oportunidade">
+            <div className="flex items-baseline gap-2">
+              <span className="text-[2.25rem] font-bold leading-none tracking-[-0.03em] tabular-nums">{lead.score}</span>
+              <span className="muted text-sm">de 100</span>
+            </div>
+            <p className="mt-2 text-sm"><span className="font-semibold">Próximo passo:</span> {nextStep({ stage: lead.stage, websiteStatus: b.websiteStatus, hasPhone: !!b.phoneE164, hasSite: !!site, active: b.active })}</p>
+            <ul className="mt-4 space-y-1.5 text-[0.8125rem]">
+              {positives.map((f) => (
+                <li key={f.label} className="flex items-start justify-between gap-3">
+                  <span>{f.label}</span>
+                  <span className={`shrink-0 font-semibold tabular-nums ${f.points < 0 ? "text-[var(--danger)]" : "text-[var(--ok)]"}`}>{f.points > 0 ? "+" : ""}{f.points}</span>
+                </li>
+              ))}
+            </ul>
+            {missing.length > 0 && (
+              <p className="muted mt-3 border-t border-[var(--line)] pt-3 text-[0.8125rem]">Falta: {missing.map((m) => m.label.toLowerCase()).join(", ")}.</p>
             )}
-            <form action={generatePreview} className="mt-3 flex gap-2">
+            <p className="subtle mt-3 text-[0.75rem]">Origem: {[...new Set(sources.map((src) => SOURCE[src.source] ?? src.source))].join(", ") || "—"}</p>
+          </Card>
+
+          <Card title="Histórico">
+            <form action={addNote} className="mb-5 flex gap-2">
               <input type="hidden" name="leadId" value={lead.id} />
-              <select name="template" className="field" defaultValue={site?.template ?? ""} aria-label="Template">
-                <option value="">Template automático</option>
-                {TEMPLATES.map((t) => <option key={t} value={t}>{TEMPLATE_LABEL[t]}</option>)}
-              </select>
-              <Submit className="btn btn-primary" pendingText="Gerando…">{site ? "Regenerar" : "Gerar"}</Submit>
+              <input className="field field-sm" name="note" placeholder="Escrever uma anotação" aria-label="Anotação" />
+              <Submit className="btn btn-secondary btn-sm">Salvar</Submit>
             </form>
+            <ol className="space-y-4">
+              {events.map((e) => (
+                <li key={e.id} className="relative pl-5 text-[0.8125rem] before:absolute before:top-[7px] before:left-0 before:h-2 before:w-2 before:rounded-full before:bg-[var(--line-strong)] after:absolute after:top-[19px] after:bottom-[-14px] after:left-[3.5px] after:w-px after:bg-[var(--line)] last:after:hidden">
+                  <div className={e.type === "note" ? "rounded-[var(--radius-sm)] bg-[var(--warn-bg)] px-2.5 py-1.5" : ""}>{e.message}</div>
+                  <div className="subtle mt-0.5 text-[0.75rem]">{fmt(e.createdAt)}</div>
+                </li>
+              ))}
+            </ol>
           </Card>
-
-          <Card title={<span className="inline-flex items-center gap-2"><MessageCircle size={15} /> Contato</span>}>
-            {wa ? (
-              <div className="mb-3 flex items-center justify-between gap-2 text-sm">
-                <div>
-                  <div className="font-semibold tabular-nums">{formatBrPhone(wa.value)}</div>
-                  <div className="muted text-xs">
-                    WhatsApp: {wa.waExists === true ? "confirmado" : wa.waExists === false ? "não existe" : "não verificado"} · permissão: {wa.permission}
-                    {wa.consentSource ? ` (${wa.consentSource})` : ""}
-                  </div>
-                </div>
-                <form action={setContactPermission} className="flex gap-1">
-                  <input type="hidden" name="leadId" value={lead.id} />
-                  <input type="hidden" name="contactId" value={wa.id} />
-                  <select name="permission" className="field !w-auto !py-1 text-xs" defaultValue={wa.permission === "unknown" ? "public_business" : wa.permission} aria-label="Permissão">
-                    <option value="public_business">Comercial público</option>
-                    <option value="opt_in">Opt-in</option>
-                    <option value="opted_out">Não contatar</option>
-                  </select>
-                  <Submit className="btn btn-ghost !px-2 !py-1 text-xs">OK</Submit>
-                </form>
-              </div>
-            ) : (
-              <p className="muted mb-3 text-sm">Sem WhatsApp cadastrado. Edite os dados da empresa para adicionar.</p>
-            )}
-            {elig.eligible ? (
-              <form action={sendOutreach}>
-                <input type="hidden" name="leadId" value={lead.id} />
-                <Submit className="btn btn-primary w-full" pendingText="Enfileirando…"><Send size={14} /> Enviar primeiro contato</Submit>
-                <p className="muted mt-2 text-xs">Enviado pelo número conectado, em horário comercial, respeitando limites e aquecimento do número.</p>
-              </form>
-            ) : (
-              <Notice tone="info">Primeiro contato indisponível: {elig.reasons.join("; ")}.</Notice>
-            )}
-            {lead.stage === "contacted" && (
-              <form action={followUpNow} className="mt-2">
-                <input type="hidden" name="leadId" value={lead.id} />
-                <Submit className="btn btn-ghost w-full">Enviar follow-up agora</Submit>
-              </form>
-            )}
-            {convs.map((c) => (
-              <Link key={c.id} href={`/inbox?c=${c.id}`} className="btn btn-dark mt-3 w-full">Abrir conversa ({c.state.replace("_", " ").toLowerCase()})</Link>
-            ))}
-          </Card>
-
         </div>
       </div>
     </>
