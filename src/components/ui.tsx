@@ -4,9 +4,9 @@ import type { LeadStage } from "@/server/db/schema";
 
 export const cx = clsx;
 
-export function Card({ children, className, title, action }: { children: ReactNode; className?: string; title?: ReactNode; action?: ReactNode }) {
+export function Card({ children, className, title, action, tour }: { children: ReactNode; className?: string; title?: ReactNode; action?: ReactNode; tour?: string }) {
   return (
-    <section className={cx("panel", className)}>
+    <section className={cx("panel", className)} data-tour={tour}>
       {(title || action) && (
         <header className="flex items-center justify-between gap-3 border-b border-[var(--line)] px-5 py-3.5">
           <h2 className="text-sm font-semibold">{title}</h2>

@@ -25,6 +25,7 @@ import { outreachEligibility } from "../scoring";
 import { classifyMessage } from "../ai/classify";
 import { transition, automationMaySpeak } from "../handoff";
 import { phoneFromJid, formatBrPhone } from "@/lib/phone";
+import { isDemoInstance } from "@/lib/demo";
 import { EvolutionClient, EvolutionError, extractText, resolveJid, STATUS_MAP, type EvolutionWebhook, type UpsertData } from "./evolution";
 import {
   brPhoneVariants,
@@ -110,6 +111,7 @@ export async function queueOutreach(orgId: string, leadId: string, actorId: stri
     .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)));
   if (!row) return { ok: false, reason: "Lead não encontrado" };
   const { lead, business } = row;
+  if (business.isDemo) return { ok: false, reason: "Lead de exemplo — não envia mensagens" };
   const [site] = await db.select().from(websites).where(eq(websites.leadId, leadId)).orderBy(desc(websites.createdAt)).limit(1);
   const [cp] = await db
     .select()
@@ -187,6 +189,8 @@ export async function queueReply(
   if (text.length > 4000) return { ok: false, reason: "Mensagem muito longa" };
   const [conv] = await db.select().from(conversations).where(and(eq(conversations.id, conversationId), eq(conversations.orgId, orgId)));
   if (!conv) return { ok: false, reason: "Conversa não encontrada" };
+  const [ci] = await db.select({ name: whatsappInstances.name }).from(whatsappInstances).where(eq(whatsappInstances.id, conv.instanceId));
+  if (isDemoInstance(ci?.name)) return { ok: false, reason: "Conversa de exemplo — respostas não são enviadas" };
   if (author !== "system" && (await isSuppressed(orgId, conv.phoneE164))) return { ok: false, reason: "Contato pediu para não receber mensagens" };
   if (author === "ai" && !automationMaySpeak(conv.state)) return { ok: false, reason: "Conversa está com um humano" };
   if (author === "human") {
@@ -266,6 +270,7 @@ export async function sendQueuedMessage(messageId: string, opts: { client?: Evol
     return { status: "skipped" as const, reason };
   };
 
+  if (isDemoInstance(inst.name)) return cancel("Instância de exemplo");
   const isOptOutAck = msg.author === "system" && msg.kind === "reply";
   if (!isOptOutAck && (await isSuppressed(msg.orgId, conv.phoneE164))) return cancel("Contato na lista de supressão");
   if (msg.author === "ai" && !automationMaySpeak(conv.state)) return cancel("Humano assumiu a conversa");
@@ -601,6 +606,7 @@ export async function syncInstances() {
   const client = EvolutionClient.fromEnv();
   const list = await db.select().from(whatsappInstances);
   for (const i of list) {
+    if (isDemoInstance(i.name)) continue;
     try {
       const s = await client.connectionState(i.name);
       const st = s.instance?.state;

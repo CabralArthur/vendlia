@@ -1,9 +1,10 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Users, Columns3, Radar, MessagesSquare, Wallet, Settings, Bell } from "lucide-react";
+import { LayoutDashboard, Users, Columns3, Radar, MessagesSquare, Wallet, Settings, Bell, Compass } from "lucide-react";
 
 const items = [
+  { href: "/onboarding", label: "Como funciona", icon: Compass },
   { href: "/dashboard", label: "Visão geral", icon: LayoutDashboard },
   { href: "/inbox", label: "Inbox", icon: MessagesSquare, badgeKey: "inbox" },
   { href: "/leads", label: "Leads", icon: Users },
@@ -25,6 +26,7 @@ export function Nav({ badges }: { badges: Record<string, number> }) {
           <Link
             key={it.href}
             href={it.href}
+            data-tour={`nav-${it.href.slice(1)}`}
             className={`flex shrink-0 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${active ? "bg-white/10 text-paper" : "text-paper/65 hover:bg-white/5 hover:text-paper"}`}
           >
             <it.icon size={17} strokeWidth={2} />

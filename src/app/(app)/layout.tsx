@@ -5,15 +5,20 @@ import { Nav } from "@/components/nav";
 import { Live } from "@/components/live";
 import { LogoMark } from "@/components/ui";
 import { logoutAction } from "../(auth)/actions";
+import { Tour } from "@/components/tour";
+import { getDemoRefs } from "@/server/onboarding";
+import { isDemoInstance } from "@/lib/demo";
+import Link from "next/link";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const s = await requireSession();
-  const [[inbox], [notes], inst] = await Promise.all([
+  const [[inbox], [notes], inst, demo] = await Promise.all([
     db.select({ n: sql<number>`count(*)::int` }).from(conversations).where(and(eq(conversations.orgId, s.orgId), inArray(conversations.state, ["HUMAN_REQUESTED", "HUMAN_ASSIGNED"]))),
     db.select({ n: sql<number>`count(*)::int` }).from(notifications).where(and(eq(notifications.orgId, s.orgId), isNull(notifications.readAt))),
-    db.select({ status: whatsappInstances.status }).from(whatsappInstances).where(eq(whatsappInstances.orgId, s.orgId)),
+    db.select({ status: whatsappInstances.status, name: whatsappInstances.name }).from(whatsappInstances).where(eq(whatsappInstances.orgId, s.orgId)),
+    getDemoRefs(s.orgId),
   ]);
-  const waOnline = inst.some((i) => i.status === "open");
+  const waOnline = inst.some((i) => i.status === "open" && !isDemoInstance(i.name));
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[236px_1fr]">
       <aside className="sticky top-0 z-30 flex flex-col bg-brand-900 py-3 lg:h-screen lg:py-5">
@@ -37,9 +42,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
       <main className="min-w-0 px-4 py-6 sm:px-8 lg:py-8">
-        <div className="mx-auto max-w-[1280px]">{children}</div>
+        <div className="mx-auto max-w-[1280px]">
+          {demo.hasDemo && (
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-sm">
+              <span><b>Modo exemplo:</b> há empresas e conversas fictícias misturadas aos seus dados. Elas nunca enviam mensagens.</span>
+              <Link href="/onboarding" className="font-semibold underline">Remover exemplos</Link>
+            </div>
+          )}
+          {children}
+        </div>
       </main>
       <Live refreshOn={["message", "conversation", "lead", "instance"]} />
+      <Tour refs={{ leadId: demo.leadId, siteId: demo.siteId, conversationId: demo.conversationId }} />
     </div>
   );
 }

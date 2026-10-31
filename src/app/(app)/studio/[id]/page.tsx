@@ -85,7 +85,7 @@ export default async function StudioPage({ params, searchParams }: { params: Pro
             <iframe key={w.version} src={`/s/${w.slug}?k=${w.previewToken}&embed=1`} className="h-[640px] w-full rounded-b-[14px]" title="Prévia do site" />
           </Card>
 
-          <Card title="Publicação">
+          <Card tour="studio-publish" title="Publicação">
             {w.status === "published" ? (
               <div className="space-y-2 text-sm">
                 <Notice tone="ok">No ar desde {w.publishedAt?.toLocaleString("pt-BR", { timeZone: "America/Recife" })} (v{w.publishedVersion}).</Notice>

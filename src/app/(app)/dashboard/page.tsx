@@ -5,7 +5,8 @@ import { db, leads, websites, subscriptions, payments, conversations, businesses
 import { Card, PageHeader, Stat, STAGE_LABEL, timeAgo, Badge } from "@/components/ui";
 import { Flash } from "@/components/flash";
 import { formatBRL } from "@/lib/text";
-import { env } from "@/server/env";
+import { getSetupProgress } from "@/server/onboarding";
+import { isDemoInstance } from "@/lib/demo";
 import { llmConfigured } from "@/server/ai/llm";
 import { CheckCircle2, Circle, ArrowRight, Flame } from "lucide-react";
 
@@ -46,15 +47,10 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const contacted = count(["contacted", "replied", "interested", "proposal_sent", "negotiation", "won", "lost"]);
   const replied = count(["replied", "interested", "proposal_sent", "negotiation", "won"]);
 
-  const e = env();
-  const steps = [
-    { done: instances.some((i) => i.status === "open"), label: "Conectar um número de WhatsApp", href: "/settings#whatsapp" },
-    { done: (runs?.n ?? 0) > 0 || total > 0, label: "Rodar a primeira prospecção", href: "/discovery" },
-    { done: (previews?.n ?? 0) > 0, label: "Gerar a primeira demonstração", href: "/leads" },
-    { done: !!e.ASAAS_API_KEY, label: "Configurar pagamentos (Asaas)", href: "/settings#integracoes" },
-    { done: contacted > 0, label: "Enviar o primeiro contato", href: "/leads?stage=preview_ready" },
-  ];
-  const pendingSteps = steps.filter((x) => !x.done).length;
+  const progress = await getSetupProgress(s.orgId);
+  const steps = progress.steps;
+  const pendingSteps = steps.filter((x) => !x.done && !x.optional).length;
+  const realInstances = instances.filter((i) => !isDemoInstance(i.name));
 
   const funnel = [
     { label: "Leads", v: total },
@@ -80,13 +76,13 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       <Flash sp={sp} />
 
       {pendingSteps > 0 && (
-        <Card className="mb-6" title={`Primeiros passos · ${steps.length - pendingSteps}/${steps.length}`}>
-          <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <Card className="mb-6" title={`Primeiros passos · ${progress.done}/${progress.required}`} action={<Link href="/onboarding" className="muted text-xs font-semibold hover:underline">Guia completo e tour →</Link>}>
+          <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
             {steps.map((st) => (
-              <li key={st.label}>
+              <li key={st.id}>
                 <Link href={st.href} className={`flex h-full items-start gap-2 rounded-lg border border-[var(--line)] p-3 text-sm ${st.done ? "opacity-60" : "hover:border-[var(--accent)]"}`}>
                   {st.done ? <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-brand-500" /> : <Circle size={18} className="muted mt-0.5 shrink-0" />}
-                  <span className={st.done ? "line-through" : "font-medium"}>{st.label}</span>
+                  <span className={st.done ? "line-through" : "font-medium"}>{st.title}{st.optional ? " (opcional)" : ""}</span>
                 </Link>
               </li>
             ))}
@@ -104,7 +100,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-        <Card title={<span className="inline-flex items-center gap-2"><Flame size={16} className="text-brand-500" /> Leads aguardando você</span>} action={<Link href="/inbox" className="muted text-xs font-semibold hover:underline">Ver inbox</Link>}>
+        <Card tour="hot" title={<span className="inline-flex items-center gap-2"><Flame size={16} className="text-brand-500" /> Leads aguardando você</span>} action={<Link href="/inbox" className="muted text-xs font-semibold hover:underline">Ver inbox</Link>}>
           {hot.length === 0 ? (
             <p className="muted text-sm">Nenhum lead aguardando atendimento. Quando alguém demonstrar interesse, aparece aqui e você recebe um alerta.</p>
           ) : (
@@ -146,7 +142,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           </div>
           <div className="muted mt-5 grid grid-cols-3 gap-2 border-t border-[var(--line)] pt-4 text-xs">
             <div><div className="text-base font-bold text-[var(--ink)]">{sentToday?.n ?? 0}</div>contatos hoje</div>
-            <div><div className="text-base font-bold text-[var(--ink)]">{instances.filter((i) => i.status === "open").length}/{instances.length}</div>números online</div>
+            <div><div className="text-base font-bold text-[var(--ink)]">{realInstances.filter((i) => i.status === "open").length}/{realInstances.length}</div>números online</div>
             <div><div className="text-base font-bold text-[var(--ink)]">US$ {((aiSpend?.v ?? 0) / 1e6).toFixed(2)}</div>IA no mês{llmConfigured() ? "" : " (off)"}</div>
           </div>
         </Card>

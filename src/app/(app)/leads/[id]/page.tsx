@@ -145,7 +145,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
         </div>
 
         <div className="space-y-6">
-          <Card title={<span className="inline-flex items-center gap-2"><Sparkles size={15} /> Demonstração</span>}>
+          <Card tour="lead-demo" title={<span className="inline-flex items-center gap-2"><Sparkles size={15} /> Demonstração</span>}>
             {site ? (
               <>
                 <div className="mb-3 overflow-hidden rounded-lg border border-[var(--line)]">
@@ -220,7 +220,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             ))}
           </Card>
 
-          <Card title={<span className="inline-flex items-center gap-2"><FileText size={15} /> Proposta</span>}>
+          <Card tour="proposal" title={<span id="proposta" className="inline-flex items-center gap-2"><FileText size={15} /> Proposta</span>}>
             <form action={createProposalAction} className="space-y-3">
               <input type="hidden" name="leadId" value={lead.id} />
               <Field label="Plano">

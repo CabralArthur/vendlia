@@ -9,6 +9,7 @@ import { Composer, ScrollBottom } from "@/components/composer";
 import { formatBrPhone } from "@/lib/phone";
 import { takeOverAction, setConversationState } from "../_actions/inbox";
 import { previewUrl } from "@/server/whatsapp/service";
+import { isDemoInstance } from "@/lib/demo";
 import { Check, CheckCheck, Clock, AlertTriangle, Bot, User } from "lucide-react";
 
 export const metadata = { title: "Inbox" };
@@ -135,7 +136,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
               <Composer
                 conversationId={active.c.id}
                 suggestion={cls?.suggestedReply}
-                disabled={active.lead?.stage === "do_not_contact" ? "Este contato pediu para não receber mensagens." : undefined}
+                disabled={isDemoInstance(active.inst.name) ? "Conversa de exemplo — aqui você responderia ao cliente. Com um número real conectado, a mensagem sai pelo WhatsApp." : active.lead?.stage === "do_not_contact" ? "Este contato pediu para não receber mensagens." : undefined}
               />
             </>
           )}
@@ -146,7 +147,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
           {active && (
             <div className="space-y-4 text-sm">
               {active.c.state !== "HUMAN_ACTIVE" && (
-                <form action={takeOverAction}>
+                <form action={takeOverAction} data-tour="takeover">
                   <input type="hidden" name="conversationId" value={active.c.id} />
                   <Submit className="btn btn-primary w-full"><User size={15} /> Assumir atendimento</Submit>
                 </form>

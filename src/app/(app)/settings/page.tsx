@@ -8,6 +8,7 @@ import { getOrgSettings } from "@/server/org";
 import { env } from "@/server/env";
 import { llmConfigured } from "@/server/ai/llm";
 import { effectiveDailyLimit } from "@/server/whatsapp/limits";
+import { isDemoInstance } from "@/lib/demo";
 import { addMember, changePassword, createInstanceAction, instanceAction, saveOrgSettings } from "../_actions/settings";
 
 export const metadata = { title: "Configurações" };
@@ -21,7 +22,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   const [st, instances, team] = await Promise.all([
     getOrgSettings(s.orgId),
-    db.select().from(whatsappInstances).where(eq(whatsappInstances.orgId, s.orgId)),
+    db.select().from(whatsappInstances).where(eq(whatsappInstances.orgId, s.orgId)).then((l) => l.filter((i) => !isDemoInstance(i.name))),
     db.select({ name: users.name, email: users.email, role: memberships.role }).from(memberships).innerJoin(users, eq(users.id, memberships.userId)).where(eq(memberships.orgId, s.orgId)),
   ]);
   const e = env();
@@ -35,7 +36,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <Flash sp={sp} />
       <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
         <div className="space-y-6">
-          <Card title={<span id="whatsapp">Números de WhatsApp</span>} action={admin && evoReady ? (
+          <Card tour="settings-whatsapp" title={<span id="whatsapp">Números de WhatsApp</span>} action={admin && evoReady ? (
             <form action={createInstanceAction} className="flex gap-2">
               <input className="field !w-40 !py-1.5" name="label" placeholder="Apelido do número" />
               <Submit className="btn btn-primary !py-1.5">Conectar número</Submit>

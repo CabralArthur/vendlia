@@ -101,6 +101,7 @@ export const businesses = pgTable(
     description: text("description"),
     services: jsonb("services").$type<string[]>().notNull().default([]),
     active: boolean("active").notNull().default(true),
+    isDemo: boolean("is_demo").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

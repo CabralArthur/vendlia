@@ -81,7 +81,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       ) : (
         <form action={bulkAction}>
           <input type="hidden" name="back" value={back} />
-          <div className="mb-3 flex flex-wrap items-center gap-2">
+          <div className="mb-3 flex flex-wrap items-center gap-2" data-tour="bulk">
             <span className="muted text-xs">Com selecionados:</span>
             <button name="op" value="preview" className="btn btn-ghost">Gerar demonstrações</button>
             <Submit name="op" value="outreach" className="btn btn-primary" confirm="Enfileirar o primeiro contato no WhatsApp para os leads elegíveis selecionados?">

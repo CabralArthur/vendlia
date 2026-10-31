@@ -33,7 +33,7 @@ export default async function DiscoveryPage({ searchParams }: { searchParams: Pr
       <PageHeader title="Prospecção" subtitle="Encontre negócios com oportunidade digital em fontes autorizadas." />
       <Flash sp={sp} />
       <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
-        <Card title="Buscar por cidade e segmento">
+        <Card tour="discovery-search" title="Buscar por cidade e segmento">
           <form action={startDiscovery} className="grid gap-3 sm:grid-cols-2">
             <Field label="Fonte">
               <select className="field" name="source" defaultValue={hasGoogle ? "google_places" : "osm"}>

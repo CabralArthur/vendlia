@@ -85,7 +85,7 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
       </div>
 
       <h2 className="mt-10 mb-3 text-lg font-bold">Planos</h2>
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-3" data-tour="plans">
         {[...prods, null].map((p) => (
           <Card key={p?.id ?? "new"} title={p ? p.name : "Novo plano"}>
             <form action={saveProductAction} className="space-y-3">

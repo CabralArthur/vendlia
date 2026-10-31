@@ -172,3 +172,21 @@ body {
   background: var(--line);
   border-radius: 8px;
 }
+
+/* Guided tour spotlight */
+.tour-spot {
+  position: relative;
+  z-index: 40;
+  outline: 3px solid #39d79b;
+  outline-offset: 4px;
+  border-radius: 14px;
+  animation: tour-pulse 1.6s ease-in-out infinite;
+  scroll-margin: 120px;
+}
+@keyframes tour-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(57, 215, 155, 0.45); }
+  50% { box-shadow: 0 0 0 10px rgba(57, 215, 155, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour-spot { animation: none; }
+}

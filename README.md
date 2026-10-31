@@ -33,6 +33,14 @@ Decisões: um único app Next.js no lugar de Next + NestJS (menos serviços, mes
 
 Health check: `GET /api/health` (banco, Redis e heartbeat do worker).
 
+## Primeiro acesso
+
+Depois de criar a conta você cai em **Como funciona** (`/onboarding`):
+
+- **Carregar dados de exemplo**: 7 empresas fictícias, uma conversa “Aguardando humano”, uma venda fechada com site publicado e um opt-out. Nada disso envia mensagens ou gera cobranças (bloqueado no código e coberto por testes). Remova com um clique; seus dados reais não são tocados.
+- **Tour guiado**: 10 passos que navegam pelas telas e destacam o que importa em cada uma.
+- **Checklist “Para começar a vender”**: progresso real (os exemplos não contam), com o que falta configurar.
+
 ## Operação diária
 
 1. **Prospecção** → cidade + segmento (OpenStreetMap grátis; Google Places se tiver chave) ou CSV.
