@@ -10,11 +10,12 @@ import { THEMES } from "@/sites/themes";
 import { previewUrl } from "@/server/whatsapp/service";
 import { siteUrls } from "@/server/sites/publish";
 import { env } from "@/server/env";
-import { aiSiteAction, publishAction, rollbackAction, saveSiteAction, setDomainAction, unpublishAction, useTemplateAction } from "../../_actions/sites";
+import { aiSiteAction, requestLogoAction, saveLogoAction, publishAction, rollbackAction, saveSiteAction, setDomainAction, unpublishAction, useTemplateAction } from "../../_actions/sites";
 import { getSiteGen } from "@/server/sites/progress";
 import { llmConfigured } from "@/server/ai/llm";
 import { SiteGenStatus } from "@/components/site-gen-status";
-import { ExternalLink, Sparkles } from "lucide-react";
+import { fontHrefs } from "@/sites/font-pairings";
+import { ExternalLink, Sparkles, PenTool } from "lucide-react";
 
 export const metadata = { title: "Editar site" };
 
@@ -90,6 +91,43 @@ export default async function StudioPage({ params, searchParams }: { params: Pro
               <form action={useTemplateAction} className="mt-3 border-t border-[var(--line)] pt-3">
                 <input type="hidden" name="siteId" value={w.id} />
                 <Submit className="btn btn-quiet btn-sm" pendingText="Trocando…" confirm="Trocar para o modelo pronto? O design da IA fica no histórico de versões.">Usar o modelo pronto em vez do design da IA</Submit>
+              </form>
+            )}
+          </Card>
+        )}
+        {(aiOn || c.logo) && (
+          <Card title={<span className="inline-flex items-center gap-2"><PenTool size={16} /> Logo</span>} description={c.logo ? "Escolha uma proposta e decida se ela aparece no site no lugar do nome." : "Opcional. A IA desenha 3 propostas de logo em vetor, com as fontes do site."}>
+            {c.logo && fontHrefs(c.logo.fonts).map((href) => <link key={href} rel="stylesheet" href={href} />)}
+            {c.logo ? (
+              <form action={saveLogoAction} className="space-y-4">
+                <input type="hidden" name="siteId" value={w.id} />
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {c.logo.options.map((o, i) => (
+                    <label key={i} className="group cursor-pointer rounded-[var(--radius)] border border-[var(--line)] p-2 has-[:checked]:border-[var(--ink)] has-[:checked]:ring-1 has-[:checked]:ring-[var(--ink)]">
+                      <div className="grid h-24 place-items-center rounded-[calc(var(--radius)-4px)] bg-white px-3 text-[#111]">
+                        <span className="block w-full [&_svg]:mx-auto [&_svg]:h-14 [&_svg]:w-auto [&_svg]:max-w-full" dangerouslySetInnerHTML={{ __html: o.svg }} />
+                      </div>
+                      <div className="mt-1 grid h-16 place-items-center rounded-[calc(var(--radius)-4px)] bg-[#141414] px-3 text-white">
+                        <span className="block w-full [&_svg]:mx-auto [&_svg]:h-10 [&_svg]:w-auto [&_svg]:max-w-full" dangerouslySetInnerHTML={{ __html: o.svg }} />
+                      </div>
+                      <span className="mt-2 flex items-center gap-2 px-1 text-[0.8125rem]">
+                        <input type="radio" name="selected" value={i} defaultChecked={c.logo!.selected === i} /> {o.label}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" name="use" defaultChecked={c.logo.use} /> Usar no site, no lugar do nome</label>
+                  <Submit className="btn btn-primary btn-sm" pendingText="Salvando…">Salvar escolha</Submit>
+                </div>
+              </form>
+            ) : null}
+            {aiOn && (
+              <form action={requestLogoAction} className={c.logo ? "mt-3 border-t border-[var(--line)] pt-3" : ""}>
+                <input type="hidden" name="siteId" value={w.id} />
+                <Submit className={c.logo ? "btn btn-quiet btn-sm" : "btn btn-secondary"} pendingText="Enviando…" confirm={c.logo ? "Gerar 3 propostas novas? As atuais ficam no histórico de versões." : undefined}>
+                  <PenTool size={14} /> {c.logo ? "Gerar outras propostas" : "Gerar logo com IA"}
+                </Submit>
               </form>
             )}
           </Card>

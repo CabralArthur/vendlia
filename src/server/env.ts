@@ -28,6 +28,10 @@ const schema = z.object({
   LLM_MODEL: z.string().optional(),
   /** Model that designs whole sites. Default: the strongest Claude model on the chosen provider. */
   LLM_SITE_MODEL: z.string().optional(),
+  /** Image model on OpenRouter for site photos. */
+  LLM_IMAGE_MODEL: z.string().optional(),
+  /** How many AI photos per site (0 turns them off). */
+  SITE_IMAGES: z.coerce.number().min(0).max(6).default(4),
   LLM_MONTHLY_BUDGET_USD: z.coerce.number().default(30),
 
   // Discovery sources

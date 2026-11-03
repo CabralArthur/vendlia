@@ -2,7 +2,8 @@ import type { SiteContent, TemplateId } from "@/server/db/schema";
 import { THEMES, type Theme } from "./themes";
 import { SiteMotion } from "./motion";
 import { formatBrPhone } from "@/lib/phone";
-import { fillPlaceholders, googleFontsHref } from "@/server/ai/sitedesign";
+import { fillPlaceholders } from "@/server/ai/sitedesign";
+import { fontHrefs } from "./font-pairings";
 
 type Props = { content: SiteContent; template: TemplateId; accent: string; demo: boolean; demoNote?: string };
 
@@ -291,6 +292,15 @@ export function mapUrls(c: SiteContent) {
   return { embed, link, fullAddress, place };
 }
 
+/** The chosen logo SVG when the operator turned it on, else null. */
+export function activeLogo(c: SiteContent) {
+  const l = c.logo;
+  if (!l?.use || l.selected === null || l.selected === undefined) return null;
+  return l.options[l.selected]?.svg ?? null;
+}
+
+const LOGO_CSS = `.vd-logo{text-transform:none;letter-spacing:normal;display:inline-flex;align-items:center;line-height:0}.vd-logo svg{height:clamp(30px,3.2vw,44px);width:auto;max-width:min(260px,52vw);display:block;overflow:visible}.vd-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}`;
+
 /** Renders the AI design when there is one, otherwise the niche template. */
 export function Site(props: Props) {
   return props.content.ai ? <AiSiteRender content={props.content} demo={props.demo} demoNote={props.demoNote} /> : <SiteRender {...props} />;
@@ -307,17 +317,26 @@ export function AiSiteRender({ content: c, demo, demoNote }: { content: SiteCont
     mapsUrl: m.link,
     mapEmbed: m.embed,
     name: c.businessName,
+    images: ai.images,
+    fallbackColor: ai.palette?.[1],
   });
+  const logo = activeLogo(c);
+  const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const withLogo = logo
+    ? html.replace(/(<(\w+)\b[^>]*\sdata-brand\b[^>]*>)([\s\S]*?)(<\/\2>)/g, (_m, open: string, _t: string, _inner: string, close: string) => `${open}<span class="vd-logo" aria-hidden="true">${logo}</span><span class="vd-sr">${esc(c.businessName)}</span>${close}`)
+    : html;
   return (
     <>
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-      {ai.fonts.map((f) => <link key={f.family} rel="stylesheet" href={googleFontsHref(f)} />)}
-      <style dangerouslySetInnerHTML={{ __html: `html,body{margin:0;padding:0}.vai{min-height:100vh;overflow-x:clip}.vai *,.vai *::before,.vai *::after{box-sizing:border-box}.vai img{max-width:100%}#vd-demo{position:relative;z-index:2147483000;background:#14171a!important;color:#d7dbe0!important;font:500 12.5px/1.4 system-ui,sans-serif!important;padding:8px 16px!important;text-align:center!important;margin:0!important}#vd-demo b{color:#fff;font-weight:600}` }} />
+      <link rel="preconnect" href="https://api.fontshare.com" />
+      <link rel="preconnect" href="https://cdn.fontshare.com" crossOrigin="" />
+      {fontHrefs([...ai.fonts, ...(logo ? c.logo!.fonts : [])]).map((href) => <link key={href} rel="stylesheet" href={href} />)}
+      <style dangerouslySetInnerHTML={{ __html: `html,body{margin:0;padding:0}.vai{min-height:100vh;overflow-x:clip}.vai *,.vai *::before,.vai *::after{box-sizing:border-box}.vai img{max-width:100%}#vd-demo{position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:2147483000;background:rgba(20,23,26,.82)!important;color:#d7dbe0!important;font:500 11.5px/1.3 system-ui,sans-serif!important;padding:6px 12px!important;margin:0!important;border-radius:999px;backdrop-filter:blur(8px);white-space:nowrap;pointer-events:none;max-width:calc(100vw - 24px);overflow:hidden;text-overflow:ellipsis}#vd-demo b{color:#fff;font-weight:600}@media(max-width:560px){#vd-demo{top:auto;bottom:84px}}${LOGO_CSS}` }} />
       {demo && (
-        <p id="vd-demo" role="note"><b>Prévia de demonstração.</b> Não é o site oficial do estabelecimento.{demoNote ? ` ${demoNote}` : ""}</p>
+        <p id="vd-demo" role="note"><b>Prévia de demonstração</b> · não é o site oficial{demoNote ? ` · ${demoNote}` : ""}</p>
       )}
-      <div className="vai" dangerouslySetInnerHTML={{ __html: html }} />
+      <div className="vai" dangerouslySetInnerHTML={{ __html: withLogo }} />
       <SiteMotion root=".vai" />
     </>
   );
@@ -326,6 +345,7 @@ export function AiSiteRender({ content: c, demo, demoNote }: { content: SiteCont
 export function SiteRender({ content: c, template, accent, demo, demoNote }: Props) {
   const t = THEMES[template] ?? THEMES.services;
   const a = /^#[0-9a-f]{6}$/i.test(accent) ? accent : t.accent;
+  const tplLogo = activeLogo(c);
   const sec = { ...t.defaults, ...(c.sections ?? {}) };
   const hello = "Olá! Vi o site de vocês e gostaria de mais informações.";
   const wa = waLink(c.contact.whatsapp, hello);
@@ -365,7 +385,8 @@ export function SiteRender({ content: c, template, accent, demo, demoNote }: Pro
 
   return (
     <div className={`vs t-${template}${cover ? " has-cover" : ""}`}>
-      <style dangerouslySetInnerHTML={{ __html: css(t, a) }} />
+      {tplLogo && fontHrefs(c.logo!.fonts).map((href) => <link key={href} rel="stylesheet" href={href} />)}
+      <style dangerouslySetInnerHTML={{ __html: css(t, a) + LOGO_CSS }} />
       {demo && (
         <div className="demo" role="note">
           <b>Prévia de demonstração.</b> Não é o site oficial do estabelecimento.{demoNote ? ` ${demoNote}` : ""}
@@ -374,7 +395,16 @@ export function SiteRender({ content: c, template, accent, demo, demoNote }: Pro
 
       <header className="top">
         <div className="wrap">
-          <a href="#inicio" className="brand">{c.businessName}</a>
+          <a href="#inicio" className="brand">
+            {tplLogo ? (
+              <>
+                <span className="vd-logo" aria-hidden dangerouslySetInnerHTML={{ __html: tplLogo }} />
+                <span className="vd-sr">{c.businessName}</span>
+              </>
+            ) : (
+              c.businessName
+            )}
+          </a>
           <nav className="nav" aria-label="Seções">
             <a href="#sobre">{sec.aboutTitle}</a>
             {services.length > 0 && <a href="#servicos">{sec.servicesTitle}</a>}

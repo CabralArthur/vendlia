@@ -2,35 +2,70 @@
 import { useEffect } from "react";
 
 /**
- * Reveal-on-scroll + sticky header state. Runs after hydration (as an effect) so the
- * classes it adds never clash with the server HTML. Content stays visible without JS
- * and when the visitor prefers reduced motion.
+ * Scroll effects for sites, run after hydration so the classes never clash with the server HTML.
+ * Hooks available to templates and AI designs:
+ *  - .rv / [data-reveal]  → gets "in" when it enters the viewport (root gets "anim" to enable hiding)
+ *  - [data-parallax="0.15"] → translateY proportional to its distance from the viewport center
+ *  - root gets "scrolled" after 40px (sticky header styling); template header .top too
+ * Everything stays visible and static without JS or with prefers-reduced-motion.
  */
 export function SiteMotion({ root: rootSel = ".vs" }: { root?: string } = {}) {
   useEffect(() => {
     const root = document.querySelector<HTMLElement>(rootSel);
     if (!root) return;
     const header = root.querySelector(".top");
-    const onScroll = () => header?.classList.toggle("scrolled", window.scrollY > 16);
-    onScroll();
-    addEventListener("scroll", onScroll, { passive: true });
     const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    let io: IntersectionObserver | undefined;
-    if (!reduce && "IntersectionObserver" in window) {
+    const par = reduce ? [] : [...root.querySelectorAll<HTMLElement>("[data-parallax]")];
+    const speeds = par.map((el) => Math.max(-0.5, Math.min(0.5, Number(el.dataset.parallax) || 0.15)));
+    par.forEach((el) => (el.style.willChange = "transform"));
+
+    // Reveal by geometry on scroll (IntersectionObserver ignores elements hidden with clip-path).
+    let pending = reduce ? [] : [...root.querySelectorAll<HTMLElement>(".rv, [data-reveal]")];
+    const reveal = (vh: number) => {
+      if (!pending.length) return;
+      pending = pending.filter((el) => {
+        const r = el.getBoundingClientRect();
+        if (r.top < vh * 0.88 && r.bottom > 0) {
+          el.classList.add("in");
+          return false;
+        }
+        return true;
+      });
+    };
+
+    let ticking = false;
+    const frame = () => {
+      ticking = false;
+      const y = window.scrollY;
+      root.classList.toggle("scrolled", y > 40);
+      header?.classList.toggle("scrolled", y > 16);
       const vh = window.innerHeight;
-      const els = [...root.querySelectorAll<HTMLElement>(".rv, [data-reveal]")];
-      // What is already on screen stays put; only content below the fold animates in.
-      els.forEach((e) => e.getBoundingClientRect().top < vh && e.classList.add("in"));
+      reveal(vh);
+      par.forEach((el, i) => {
+        const host = el.parentElement ?? el;
+        const r = host.getBoundingClientRect();
+        if (r.bottom < -200 || r.top > vh + 200) return;
+        const offset = r.top + r.height / 2 - vh / 2;
+        el.style.transform = `translate3d(0, ${(-offset * speeds[i]!).toFixed(1)}px, 0)`;
+      });
+    };
+    const onScroll = () => {
+      if (!ticking) {
+        ticking = true;
+        requestAnimationFrame(frame);
+      }
+    };
+    // Content already on screen is shown at once; the rest animates in while scrolling.
+    if (!reduce) {
+      reveal(window.innerHeight);
       root.classList.add("anim");
-      io = new IntersectionObserver(
-        (entries) => entries.forEach((e) => e.isIntersecting && (e.target.classList.add("in"), io?.unobserve(e.target))),
-        { threshold: 0.12, rootMargin: "0px 0px -6% 0px" },
-      );
-      els.forEach((e) => !e.classList.contains("in") && io!.observe(e));
     }
+    frame();
+    addEventListener("scroll", onScroll, { passive: true });
+    addEventListener("resize", onScroll);
     return () => {
       removeEventListener("scroll", onScroll);
-      io?.disconnect();
+      removeEventListener("resize", onScroll);
     };
   }, [rootSel]);
   return null;

@@ -3,6 +3,7 @@ import { db, businesses, leads, websites, websiteVersions, type SiteContent, typ
 import { segmentById } from "../discovery/segments";
 import { generateSiteContent } from "../ai/sitecopy";
 import { designSite } from "../ai/sitedesign";
+import { generateLogos } from "../ai/logo";
 import { llmConfigured } from "../ai/llm";
 import { setSiteGen } from "./progress";
 import { randomToken, slugify } from "@/lib/text";
@@ -136,4 +137,20 @@ export async function rollbackSite(orgId: string, siteId: string, toVersion: num
   const [v] = await db.select().from(websiteVersions).where(and(eq(websiteVersions.websiteId, siteId), eq(websiteVersions.version, toVersion)));
   if (!v) throw new Error("Versão não encontrada");
   return saveSiteEdit(orgId, siteId, { content: v.content, template: v.template as TemplateId, accent: v.accent }, `Rollback para v${toVersion}`);
+}
+
+/** Generates 3 logo proposals for a site (queued job). The operator picks one in the Studio. */
+export async function generateLogoForSite(orgId: string, siteId: string, fetchImpl?: typeof fetch) {
+  const [w] = await db.select().from(websites).where(and(eq(websites.id, siteId), eq(websites.orgId, orgId)));
+  if (!w) throw new Error("Site não encontrado");
+  await setSiteGen(w.leadId, { status: "running", step: "A IA está desenhando 3 propostas de logo…", mode: "ai", startedAt: Date.now() });
+  const r = await generateLogos(orgId, w.content, w.template, w.accent, fetchImpl);
+  if (!r.logo) {
+    await setSiteGen(w.leadId, { status: "failed", step: `Logo não gerado: ${r.error}` });
+    return null;
+  }
+  const [cur] = await db.select().from(websites).where(eq(websites.id, siteId));
+  const v = await saveSiteEdit(orgId, siteId, { content: { ...cur!.content, logo: r.logo }, template: cur!.template, accent: cur!.accent }, "Propostas de logo");
+  await setSiteGen(w.leadId, { status: "done", step: "Logos prontos. Escolha um abaixo." });
+  return v;
 }

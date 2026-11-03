@@ -30,7 +30,11 @@ export type Candidate = {
 export type LogFn = (msg: string, level?: "info" | "ok" | "warn" | "error") => void | Promise<void>;
 const noop: LogFn = () => {};
 
-export type DiscoveryParams = { city: string; state: string; segment: SegmentId; limit?: number };
+export type DiscoveryParams = { city: string; state: string; segment: SegmentId; limit?: number; neighborhood?: string };
+
+/** Default/maximum companies per search. Kept low on purpose: fewer, better leads and lower Google cost. */
+export const DEFAULT_LIMIT = 20;
+export const MAX_LIMIT = 60;
 
 /* ----------------------------- OpenStreetMap ----------------------------- */
 // Data © OpenStreetMap contributors, ODbL 1.0 — storage and reuse allowed with attribution.
@@ -55,8 +59,18 @@ export function cityRegex(city: string) {
  * With `areaId` (resolved via Nominatim) the query is cheap; without it we fall back to a
  * name match on municipality boundaries (accent/case-insensitive).
  */
-export function buildOverpassQuery(p: DiscoveryParams, areaId?: number) {
+export function buildOverpassQuery(p: DiscoveryParams, areaId?: number, bbox?: [number, number, number, number]) {
   const seg = segmentById(p.segment);
+  const limit = Math.min(p.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
+  if (bbox) {
+    const b = bbox.map((n) => n.toFixed(5)).join(",");
+    const parts = seg.osm.map((f) => `nwr${f}(${b});`).join("\n  ");
+    return `[out:json][timeout:60];
+(
+  ${parts}
+);
+out center tags ${limit};`;
+  }
   const parts = seg.osm.map((f) => `nwr${f}(area.a);`).join("\n  ");
   const area = areaId
     ? `area(id:${areaId})->.a;`
@@ -66,7 +80,31 @@ ${area}
 (
   ${parts}
 );
-out center tags ${Math.min(p.limit ?? 300, 1000)};`;
+out center tags ${limit};`;
+}
+
+/** Bounding box (south, west, north, east) of a neighborhood, widened to at least ~1.5 km. */
+export async function resolveNeighborhoodBox(p: DiscoveryParams, fetchImpl: typeof fetch = fetch): Promise<[number, number, number, number] | null> {
+  if (!p.neighborhood?.trim()) return null;
+  const uf = p.state.trim().toUpperCase();
+  const q = `${p.neighborhood.trim()}, ${p.city.trim()}, ${UF_NAME[uf] ?? uf}, Brasil`;
+  try {
+    const res = await fetchImpl(`https://nominatim.openstreetmap.org/search?${new URLSearchParams({ q, countrycodes: "br", format: "jsonv2", limit: "1" })}`, {
+      headers: { "User-Agent": UA, Accept: "application/json", "Accept-Language": "pt-BR" },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) return null;
+    const [hit] = (await res.json()) as { boundingbox?: string[]; lat: string; lon: string }[];
+    if (!hit) return null;
+    let [s, n, w, e] = (hit.boundingbox ?? [hit.lat, hit.lat, hit.lon, hit.lon]).map(Number) as [number, number, number, number];
+    const minHalf = 0.0075; // ~800 m each side
+    const cy = (s + n) / 2, cx = (w + e) / 2;
+    if (n - s < minHalf * 2) [s, n] = [cy - minHalf, cy + minHalf];
+    if (e - w < minHalf * 2) [w, e] = [cx - minHalf, cx + minHalf];
+    return [s, w, n, e];
+  } catch {
+    return null;
+  }
 }
 
 const UA = "Vendlia/1.0 (prospeccao B2B; https://github.com/CabralArthur/vendlia)";
@@ -140,10 +178,19 @@ export const OSM_UNAVAILABLE = "O OpenStreetMap está sobrecarregado agora. Tent
 /** Queries Overpass, falling back across public mirrors when one is busy (429/5xx/timeouts). */
 export async function fetchOsm(p: DiscoveryParams, fetchImpl: typeof fetch = fetch, opts: { retryDelayMs?: number; log?: LogFn } = {}): Promise<Candidate[]> {
   const log = opts.log ?? noop;
-  await log(`Localizando ${p.city}/${p.state.toUpperCase()} no mapa…`);
-  const areaId = await resolveCityArea(p, fetchImpl);
-  await log(areaId ? "Cidade encontrada. Buscando empresas só dentro dela." : "Não achei a cidade exata; buscando pelo nome do município.", areaId ? "ok" : "warn");
-  const body = "data=" + encodeURIComponent(buildOverpassQuery(p, areaId ?? undefined));
+  let bbox: [number, number, number, number] | null = null;
+  if (p.neighborhood?.trim()) {
+    await log(`Localizando o bairro ${p.neighborhood} em ${p.city}/${p.state.toUpperCase()}…`);
+    bbox = await resolveNeighborhoodBox(p, fetchImpl);
+    await log(bbox ? "Bairro encontrado. Buscando empresas na região dele." : "Não achei o bairro; buscando na cidade inteira.", bbox ? "ok" : "warn");
+  }
+  let areaId: number | null = null;
+  if (!bbox) {
+    await log(`Localizando ${p.city}/${p.state.toUpperCase()} no mapa…`);
+    areaId = await resolveCityArea(p, fetchImpl);
+    await log(areaId ? "Cidade encontrada. Buscando empresas só dentro dela." : "Não achei a cidade exata; buscando pelo nome do município.", areaId ? "ok" : "warn");
+  }
+  const body = "data=" + encodeURIComponent(buildOverpassQuery(p, areaId ?? undefined, bbox ?? undefined));
   const mirrors = [...new Set([env().OVERPASS_URL, ...OVERPASS_MIRRORS])];
   // Two rounds across all mirrors, with a pause in between: public servers are often busy for a few seconds.
   const attempts = [...mirrors, ...mirrors];
@@ -240,7 +287,7 @@ export async function fetchGooglePlaces(p: DiscoveryParams, fetchImpl: typeof fe
   const seg = segmentById(p.segment);
   const all: unknown[] = [];
   let pageToken: string | undefined;
-  const max = Math.min(p.limit ?? 60, 60);
+  const max = Math.min(p.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
   let page = 0;
   do {
     page++;
@@ -254,10 +301,10 @@ export async function fetchGooglePlaces(p: DiscoveryParams, fetchImpl: typeof fe
           "places.id,places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.businessStatus,places.location,places.regularOpeningHours.weekdayDescriptions,places.primaryTypeDisplayName,nextPageToken",
       },
       body: JSON.stringify({
-        textQuery: `${seg.googleQuery} em ${p.city}, ${p.state}`,
+        textQuery: `${seg.googleQuery} em ${p.neighborhood?.trim() ? `${p.neighborhood.trim()}, ` : ""}${p.city}, ${p.state}`,
         languageCode: "pt-BR",
         regionCode: "BR",
-        pageSize: 20,
+        pageSize: Math.min(20, max - all.length),
         ...(pageToken ? { pageToken } : {}),
       }),
       signal: AbortSignal.timeout(30_000),

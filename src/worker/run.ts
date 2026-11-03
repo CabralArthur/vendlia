@@ -4,7 +4,7 @@ import { newRedis, redis } from "../server/redis";
 import { QUEUES, queue, enqueue } from "../server/queue";
 import { db, messages } from "../server/db";
 import { runDiscovery, purgeExpiredSourceData } from "../server/discovery/run";
-import { generateSiteForLead } from "../server/sites/service";
+import { generateLogoForSite, generateSiteForLead } from "../server/sites/service";
 import { processProviderEvent, queueDueFollowUps, sendQueuedMessage, syncInstances } from "../server/whatsapp/service";
 
 const log = (msg: string, extra?: unknown) =>
@@ -27,7 +27,11 @@ export async function startWorkers(where: "worker" | "web") {
   if (started) return;
   started = true;
   make(QUEUES.discovery, 2, async (job) => runDiscovery(job.data.runId));
-  make(QUEUES.sites, 3, async (job) => generateSiteForLead(job.data.orgId, job.data.leadId, { template: job.data.template, mode: job.data.mode, instructions: job.data.instructions }));
+  make(QUEUES.sites, 3, async (job) =>
+    job.name === "logo"
+      ? generateLogoForSite(job.data.orgId, job.data.siteId)
+      : generateSiteForLead(job.data.orgId, job.data.leadId, { template: job.data.template, mode: job.data.mode, instructions: job.data.instructions }),
+  );
   make(QUEUES.inbound, 5, async (job) => processProviderEvent(job.data.providerEventId));
 
   // Outbound uses concurrency 1 per process to keep pacing deterministic.

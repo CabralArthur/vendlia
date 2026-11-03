@@ -25,7 +25,7 @@ export async function runDiscovery(runId: string, fetchImpl?: typeof fetch, opts
   const log = runLogger(runId);
   await db.update(discoveryRuns).set({ status: "running" }).where(eq(discoveryRuns.id, runId));
   const params = run.params as DiscoveryParams;
-  const label = `${segmentById(params.segment).label} em ${params.city}/${params.state}`;
+  const label = `${segmentById(params.segment).label} em ${params.neighborhood ? `${params.neighborhood}, ` : ""}${params.city}/${params.state}`;
   await log(`Busca iniciada: ${label} (${run.source === "google_places" ? "Google Maps" : "OpenStreetMap"}).`);
   try {
     const candidates =

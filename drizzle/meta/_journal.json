@@ -29,6 +29,13 @@
       "when": 1793672544259,
       "tag": "0003_discovery_logs",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793678244926,
+      "tag": "0004_site_assets",
+      "breakpoints": true
     }
   ]
 }

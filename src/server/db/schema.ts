@@ -9,7 +9,10 @@ import {
   index,
   doublePrecision,
   primaryKey,
+  customType,
 } from "drizzle-orm/pg-core";
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
 import { sql } from "drizzle-orm";
 
 const id = () => text("id").primaryKey().default(sql`gen_random_uuid()::text`);
@@ -224,7 +227,7 @@ export type TemplateId = (typeof TEMPLATES)[number];
 /** A whole site designed by the AI (sanitized HTML + CSS with link placeholders). */
 export type SiteAi = {
   html: string;
-  fonts: { family: string; weights?: number[]; italic?: boolean }[];
+  fonts: { family: string; weights?: number[]; italic?: boolean; source?: "google" | "fontshare"; slug?: string }[];
   businessType: string;
   concept?: string;
   palette?: string[];
@@ -232,6 +235,19 @@ export type SiteAi = {
   costMicros: number;
   generatedAt: string;
   instructions?: string;
+  /** Font pairing id chosen by the AI (see src/sites/font-pairings.ts). */
+  pairing?: string;
+  /** AI photos by slot: {{IMG:slot}} in the html → /api/assets/<id>. */
+  images?: Record<string, string>;
+};
+
+export type SiteLogo = {
+  options: { svg: string; label: string }[];
+  selected: number | null;
+  use: boolean;
+  fonts: SiteAi["fonts"];
+  model?: string;
+  costMicros?: number;
 };
 
 export type SiteContent = {
@@ -267,6 +283,8 @@ export type SiteContent = {
   gallery?: string[];
   /** When present, the site is rendered from this AI design instead of the template. */
   ai?: SiteAi;
+  /** Optional AI logo proposals; when use=true the chosen one replaces the name in header/footer. */
+  logo?: SiteLogo;
 };
 
 export const websites = pgTable(
@@ -577,4 +595,19 @@ export const suppressionList = pgTable(
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("suppression_value").on(t.orgId, t.value)],
+);
+
+/** Binary files made for sites (AI photos, logos). Served by /api/assets/[id]. */
+export const siteAssets = pgTable(
+  "site_assets",
+  {
+    id: id(),
+    orgId: orgId(),
+    kind: text("kind").notNull(), // "image" | "logo"
+    mime: text("mime").notNull(),
+    data: bytea("data").notNull(),
+    prompt: text("prompt"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("site_assets_org").on(t.orgId, t.createdAt)],
 );

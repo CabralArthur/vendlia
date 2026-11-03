@@ -149,3 +149,32 @@ export async function useTemplateAction(fd: FormData) {
     return `Versão ${v}: agora usando o modelo pronto. O design da IA continua no histórico.`;
   });
 }
+
+/** Queues 3 AI logo proposals for the site. */
+export async function requestLogoAction(fd: FormData) {
+  const s = await requireSession();
+  const siteId = str(fd, "siteId");
+  return act(`/studio/${siteId}`, async () => {
+    if (!llmConfigured()) throw new Error("Configure a OPENROUTER_API_KEY no Railway para usar a IA.");
+    const [w] = await db.select().from(websites).where(and(eq(websites.id, siteId), eq(websites.orgId, s.orgId)));
+    if (!w) throw new Error("Site não encontrado");
+    await setSiteGen(w.leadId, { status: "queued", step: "", mode: "ai", startedAt: Date.now() });
+    await enqueue(QUEUES.sites, "logo", { orgId: s.orgId, siteId }, { jobId: `logo-${siteId}-${Date.now()}`, attempts: 1 });
+    return "A IA está desenhando 3 propostas de logo (cerca de 1 minuto).";
+  });
+}
+
+/** Picks a logo proposal and whether the site shows it instead of the name. */
+export async function saveLogoAction(fd: FormData) {
+  const s = await requireSession();
+  const siteId = str(fd, "siteId");
+  return act(`/studio/${siteId}`, async () => {
+    const [w] = await db.select().from(websites).where(and(eq(websites.id, siteId), eq(websites.orgId, s.orgId)));
+    if (!w?.content.logo) throw new Error("Gere o logo primeiro.");
+    const idx = Number(str(fd, "selected"));
+    const selected = Number.isInteger(idx) && idx >= 0 && idx < w.content.logo.options.length ? idx : null;
+    const use = fd.get("use") === "on" && selected !== null;
+    const v = await saveSiteEdit(s.orgId, siteId, { content: { ...w.content, logo: { ...w.content.logo, selected, use } }, template: w.template, accent: w.accent }, use ? "Logo aplicado no site" : "Logo escolhido (não aplicado)");
+    return use ? `Versão ${v}: o logo agora aparece no site.` : `Versão ${v}: escolha salva. Marque “Usar no site” para aplicar.`;
+  });
+}

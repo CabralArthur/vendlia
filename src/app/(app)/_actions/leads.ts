@@ -7,10 +7,11 @@ import { db, businesses, discoveryRuns, leads, contactPoints, LEAD_STAGES, WEBSI
 import { enqueue, QUEUES } from "@/server/queue";
 import { SEGMENTS } from "@/server/discovery/segments";
 import { ingestCandidates, rescoreLead } from "@/server/discovery/ingest";
-import { mapCsvRows, parseCsv, type Candidate } from "@/server/discovery/connectors";
+import { mapCsvRows, parseCsv, DEFAULT_LIMIT, MAX_LIMIT, type Candidate } from "@/server/discovery/connectors";
 import { setStage, logLeadEvent, audit } from "@/server/events";
 import { setSiteGen } from "@/server/sites/progress";
 import { llmConfigured } from "@/server/ai/llm";
+import { suggestSearches } from "@/server/ai/prospect";
 import { queueOutreach } from "@/server/whatsapp/service";
 import { normalizeBrPhone } from "@/lib/phone";
 import { normalizeName, onlyDigits } from "@/lib/text";
@@ -23,15 +24,15 @@ export async function startDiscovery(fd: FormData) {
   const s = await requireSession();
   return act("/discovery", async () => {
     const p = z
-      .object({ source: z.enum(["osm", "google_places"]), city: z.string().min(2), state: z.string().length(2), segment: z.enum(segIds), limit: z.coerce.number().min(10).max(1000).default(300) })
-      .parse({ source: str(fd, "source"), city: str(fd, "city"), state: str(fd, "state").toUpperCase(), segment: str(fd, "segment"), limit: str(fd, "limit") || undefined });
+      .object({ source: z.enum(["osm", "google_places"]), city: z.string().min(2), state: z.string().length(2), segment: z.enum(segIds), neighborhood: z.string().max(80).optional(), limit: z.coerce.number().min(5).max(MAX_LIMIT).default(DEFAULT_LIMIT) })
+      .parse({ source: str(fd, "source"), city: str(fd, "city"), state: str(fd, "state").toUpperCase(), segment: str(fd, "segment"), neighborhood: str(fd, "neighborhood") || undefined, limit: str(fd, "limit") || undefined });
     if (p.source === "google_places" && !env().GOOGLE_PLACES_API_KEY) throw new Error("Configure GOOGLE_PLACES_API_KEY para usar o Google Places.");
     const [run] = await db
       .insert(discoveryRuns)
       .values({
         orgId: s.orgId,
         source: p.source,
-        params: { city: p.city, state: p.state, segment: p.segment, limit: p.limit },
+        params: { city: p.city, state: p.state, segment: p.segment, limit: p.limit, neighborhood: p.neighborhood },
         logs: [{ t: new Date().toISOString(), msg: "Na fila. A busca começa em instantes.", level: "info" }],
       })
       .returning();
@@ -256,5 +257,19 @@ export async function discardLead(fd: FormData) {
     await db.update(leads).set({ lostReason: "Descartado pelo operador" }).where(eq(leads.id, leadId));
     await setStage(s.orgId, leadId, "lost", s.userId, l.stage);
     return "Lead descartado. Ele fica em Etapa → Descartados, se precisar recuperar.";
+  });
+}
+
+/** Asks the AI where to search next (segment + city + neighborhood), based on the region and past results. */
+export async function suggestSearchesAction(fd: FormData) {
+  const s = await requireSession();
+  return act("/discovery#sugestoes", async () => {
+    if (!llmConfigured()) throw new Error("Configure a OPENROUTER_API_KEY no Railway para usar as sugestões da IA.");
+    const city = str(fd, "city");
+    const state = str(fd, "state").toUpperCase();
+    if (city.length < 2 || state.length !== 2) throw new Error("Informe a cidade e a UF.");
+    const r = await suggestSearches(s.orgId, { city, state, focus: str(fd, "focus").slice(0, 300) || undefined });
+    if (!r.data) throw new Error(`Não consegui gerar sugestões: ${r.error}`);
+    return `${r.data.items.length} sugestões prontas.`;
   });
 }
