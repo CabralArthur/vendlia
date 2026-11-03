@@ -149,7 +149,11 @@ export async function testAiAction() {
     let err = "";
     const t0 = Date.now();
     const r = await llmText(s.orgId, "ai_test", { system: "Responda apenas: ok", user: "Teste de conexão.", model, maxTokens: 20, json: false, stream: true, timeoutMs: 60_000, onError: (m) => (err = m) });
-    if (!r) throw new Error(`A IA falhou (${provider}, ${model}): ${err}`);
+    if (!r) {
+      if (/\b401\b/.test(err)) throw new Error(`O OpenRouter recusou a chave (401). Crie uma chave nova em openrouter.ai/settings/keys, cole em OPENROUTER_API_KEY no serviço web do Railway e espere o redeploy. Detalhe: ${err}`);
+      if (/\b402\b/.test(err)) throw new Error(`Sem créditos no OpenRouter (402). Adicione créditos em openrouter.ai/settings/credits. Detalhe: ${err}`);
+      throw new Error(`A IA falhou (${provider}, ${model}): ${err}`);
+    }
     return `IA funcionando: ${model} via ${provider} respondeu “${r.text.trim().slice(0, 40)}” em ${((Date.now() - t0) / 1000).toFixed(1)}s.`;
   });
 }

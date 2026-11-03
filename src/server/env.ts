@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+/** API keys pasted into Railway often carry quotes, spaces or a "Bearer " prefix: clean them. */
+const apiKey = z.preprocess(
+  (v) => (typeof v === "string" ? v.trim().replace(/^["']|["']$/g, "").replace(/^Bearer\s+/i, "").trim() || undefined : v),
+  z.string().optional(),
+);
+
 const schema = z.object({
   NODE_ENV: z.string().default("development"),
   APP_URL: z.string().url().default("http://localhost:3000"),
@@ -16,9 +22,9 @@ const schema = z.object({
   // LLM (optional — falls back to deterministic rules)
   // Optional. When empty, the provider is picked from whichever key is set (OpenRouter > Anthropic > OpenAI).
   LLM_PROVIDER: z.enum(["openrouter", "anthropic", "openai", "none", ""]).default(""),
-  OPENROUTER_API_KEY: z.string().optional(),
-  ANTHROPIC_API_KEY: z.string().optional(),
-  OPENAI_API_KEY: z.string().optional(),
+  OPENROUTER_API_KEY: apiKey,
+  ANTHROPIC_API_KEY: apiKey,
+  OPENAI_API_KEY: apiKey,
   LLM_MODEL: z.string().optional(),
   /** Model that designs whole sites. Default: the strongest Claude model on the chosen provider. */
   LLM_SITE_MODEL: z.string().optional(),
