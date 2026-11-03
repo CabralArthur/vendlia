@@ -180,6 +180,12 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <div className="space-y-3">
               <Check name="allowColdOutreach" defaultChecked={st.allowColdOutreach} disabled={!admin} label="Permitir contato com telefones comerciais públicos" description="Empresas que não pediram contato, mas divulgam o telefone. Desligado, só quem autorizou recebe mensagem." />
               <Check name="followUpEnabled" defaultChecked={st.followUpEnabled} disabled={!admin} label="Enviar um lembrete para quem não respondeu" description="Uma única mensagem, depois do prazo acima." />
+              <Check name="holdingReply" defaultChecked={st.holdingReply} disabled={!admin} label="Segurar o lead quente quando você não puder responder" description="Se o cliente pedir preço ou quiser fechar e ninguém responder no prazo abaixo, sai uma mensagem curta como “Já vou te passar os valores, só um instante.” Nunca fala de preço. Se você responder antes, ela não é enviada." />
+              <div className="pl-7">
+                <Field label="Esperar antes de mandar" hint="Minutos (0 = na hora)">
+                  <input className="field w-28" type="number" min={0} max={120} name="holdingReplyAfterMinutes" defaultValue={st.holdingReplyAfterMinutes} disabled={!admin} />
+                </Field>
+              </div>
               {ai ? (
                 <Check name="autoReplyInformational" defaultChecked={st.autoReplyInformational} disabled={!admin} label="Responder dúvidas simples automaticamente" description="Nunca fala de preço, desconto ou prazo; isso fica sempre com você." />
               ) : (
@@ -187,7 +193,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               )}
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Seu WhatsApp para alertas" optional hint="Recebe um aviso quando um cliente demonstrar interesse.">
+              <Field label="Seu WhatsApp para alertas" optional hint="Recebe no celular um aviso com o link da conversa quando um cliente demonstrar interesse. Recomendado.">
                 <input className="field" type="tel" inputMode="tel" name="operatorWhatsapp" defaultValue={st.operatorWhatsapp ? formatBrPhone(st.operatorWhatsapp) : ""} placeholder="(81) 99999-9999" disabled={!admin} />
               </Field>
               {ai ? (

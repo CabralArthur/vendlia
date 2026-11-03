@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   db,
   organizations,
@@ -184,6 +184,12 @@ describe("whatsapp outreach → reply → handoff", () => {
     const notes = await db.select().from(notifications).where(and(eq(notifications.orgId, orgId), eq(notifications.type, "hot_lead")));
     expect(notes).toHaveLength(1);
     expect(notes[0]!.priority).toBe("high");
+    // A short holding reply is queued (never mentions a price) in case nobody answers in time.
+    const holds = await db.select().from(messages).where(and(eq(messages.conversationId, conv!.id), eq(messages.kind, "holding")));
+    expect(holds).toHaveLength(1);
+    expect(holds[0]!.status).toBe("queued");
+    expect(holds[0]!.body).toMatch(/valores/);
+    expect(holds[0]!.body).not.toMatch(/R\$|\d/);
   });
 
   it("never lets AI and human talk at the same time", async () => {
@@ -198,6 +204,11 @@ describe("whatsapp outreach → reply → handoff", () => {
     const sent = await sendQueuedMessage((human as any).messageId, { client: evoClient });
     expect(sent.status).toBe("sent"); // human replies are not limited to business hours
 
+    // The operator answered first, so the holding reply is dropped instead of sent.
+    const [hold] = await db.select().from(messages).where(and(eq(messages.conversationId, conv!.id), eq(messages.kind, "holding")));
+    const held = await sendQueuedMessage(hold!.id, { client: evoClient });
+    expect(held).toEqual({ status: "skipped", reason: "Você já respondeu" });
+
     // Status update via webhook moves message forward, never backwards.
     const providerId = (sent as any).providerMessageId;
     await deliver({ event: "messages.update", instance: "vendlia-main", data: { keyId: providerId, remoteJid: "5581999998888@s.whatsapp.net", fromMe: true, status: "READ" } });
@@ -208,7 +219,7 @@ describe("whatsapp outreach → reply → handoff", () => {
     // Echo of our own send is not duplicated; a message typed on the phone is recorded as human.
     await deliver(upsert(providerId, "5581999998888", "Oi Zé! O plano...", true));
     await deliver(upsert("PHONE1", "5581999998888", "te mandei a proposta", true));
-    const outs = await db.select().from(messages).where(and(eq(messages.conversationId, conv!.id), eq(messages.direction, "out")));
+    const outs = await db.select().from(messages).where(and(eq(messages.conversationId, conv!.id), eq(messages.direction, "out"), sql`${messages.kind} <> 'holding'`));
     expect(outs).toHaveLength(3);
   });
 });

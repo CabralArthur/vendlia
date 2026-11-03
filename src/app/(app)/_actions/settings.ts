@@ -32,6 +32,8 @@ export async function saveOrgSettings(fd: FormData) {
       businessHoursEnd: z.coerce.number().min(8).max(22).parse(str(fd, "businessHoursEnd") || 18),
       classifierConfidenceThreshold: z.coerce.number().min(0.3).max(0.99).parse(str(fd, "threshold") || 0.7),
       operatorWhatsapp: op ? normalizeBrPhone(op) ?? undefined : undefined,
+      holdingReply: fd.get("holdingReply") === "on",
+      holdingReplyAfterMinutes: z.coerce.number().min(0).max(120).parse(str(fd, "holdingReplyAfterMinutes") || 5),
     };
     if (next.businessHoursEnd <= next.businessHoursStart) throw new Error("Horário final deve ser depois do inicial.");
     await db.update(organizations).set({ settings: next }).where(eq(organizations.id, s.orgId));

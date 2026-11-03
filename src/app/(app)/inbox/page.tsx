@@ -115,7 +115,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                 <Badge tone={STATE[active.c.state][1]}>{STATE[active.c.state][0]}</Badge>
               </div>
               <div className="scroll-thin min-h-0 flex-1 space-y-2 overflow-y-auto bg-[var(--bg)] px-4 py-4">
-                {thread.map((m) => (
+                {thread.filter((m) => !(m.kind === "holding" && m.status === "canceled")).map((m) => (
                   <div key={m.id} className={`flex ${m.direction === "out" ? "justify-end" : "justify-start"}`}>
                     <div className={`max-w-[78%] rounded-xl px-3.5 py-2 text-sm ${m.direction === "out" ? (m.author === "ai" || m.author === "system" ? "bg-[var(--info-bg)] text-[#1849a9] ring-1 ring-[#b2ddff]" : "bg-forest text-paper") : "bg-[var(--surface)] ring-1 ring-[var(--line)]"}`}>
                       <div className="whitespace-pre-wrap break-words">{m.body}</div>
@@ -124,6 +124,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                         {m.author === "system" && <>sistema ·</>}
                         {m.kind === "outreach" && <>1º contato ·</>}
                         {m.kind === "followup" && <>follow-up ·</>}
+                        {m.kind === "holding" && <>{m.status === "queued" ? "espera (sai se você não responder)" : "espera"} ·</>}
                         {new Date(m.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Recife" })}
                         {m.direction === "out" && (m.status === "queued" ? <Clock size={11} /> : m.status === "failed" ? <AlertTriangle size={11} className="text-red-400" /> : m.status === "read" ? <CheckCheck size={12} className="text-brand-500" /> : m.status === "delivered" ? <CheckCheck size={12} /> : m.status === "canceled" ? <span>cancelada</span> : <Check size={12} />)}
                       </div>

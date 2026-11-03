@@ -14,6 +14,7 @@ import {
   whatsappInstances,
   users,
   type ConversationState,
+  type OrgSettings,
 } from "../db";
 import { env } from "../env";
 import { enqueue, QUEUES } from "../queue";
@@ -207,6 +208,45 @@ export async function queueReply(
   return { ok: true, messageId: msg!.id };
 }
 
+const HOLDING_TEXT: Record<string, string> = {
+  price_request: "Oi! Já vou te passar os valores certinhos.",
+  purchase_intent: "Que ótimo! Já vou te chamar para acertarmos os detalhes.",
+  negotiation: "Entendi! Já te respondo sobre isso.",
+  demo_request: "Claro! Já te mostro.",
+  initial_interest: "Que bom que gostou! Já te explico como funciona.",
+  human_requested: "Claro! Já falo com você.",
+};
+
+/** Text of the holding reply: promises a human answer, never a price or a deadline it can't keep. */
+export function holdingText(intent: string, now: Date, settings: { businessHoursStart: number; businessHoursEnd: number }) {
+  const base = HOLDING_TEXT[intent] ?? "Recebi sua mensagem! Já te respondo.";
+  if (inBusinessHours(now, settings.businessHoursStart, settings.businessHoursEnd)) return `${base} Só um instante.`;
+  const open = nextBusinessOpening(now, settings.businessHoursStart, settings.businessHoursEnd);
+  const sameOrNextDay = open.getTime() - now.getTime() < 30 * 3600_000;
+  return `${base} Te respondo ${sameOrNextDay ? "logo cedo" : "na segunda logo cedo"}, tudo bem?`;
+}
+
+/**
+ * Queues one short holding reply to a hot lead, sent only if no human answers within N minutes.
+ * At most one per conversation every 12 hours.
+ */
+export async function queueHoldingReply(orgId: string, conversationId: string, intent: string, settings: OrgSettings, now = new Date()) {
+  const recent = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(and(eq(messages.conversationId, conversationId), eq(messages.kind, "holding"), sql`${messages.createdAt} > ${new Date(now.getTime() - 12 * 3600_000).toISOString()}`))
+    .limit(1);
+  if (recent.length) return null;
+  const minutes = Math.max(0, Math.min(120, settings.holdingReplyAfterMinutes ?? 5));
+  const sendAt = new Date(now.getTime() + minutes * 60_000);
+  const [msg] = await db
+    .insert(messages)
+    .values({ orgId, conversationId, direction: "out", author: "ai", kind: "holding", body: holdingText(intent, sendAt, settings), status: "queued" })
+    .returning({ id: messages.id });
+  await enqueue(QUEUES.outbound, "send", { messageId: msg!.id }, { jobId: `msg-${msg!.id}`, delay: minutes * 60_000, attempts: 6 });
+  return msg!.id;
+}
+
 export type SendOutcome =
   | { status: "sent"; providerMessageId: string }
   | { status: "skipped"; reason: string }
@@ -274,7 +314,16 @@ export async function sendQueuedMessage(messageId: string, opts: { client?: Evol
   if (isDemoInstance(inst.name)) return cancel("Instância de exemplo");
   const isOptOutAck = msg.author === "system" && msg.kind === "reply";
   if (!isOptOutAck && (await isSuppressed(msg.orgId, conv.phoneE164))) return cancel("Contato na lista de supressão");
-  if (msg.author === "ai" && !automationMaySpeak(conv.state)) return cancel("Humano assumiu a conversa");
+  if (msg.kind === "holding") {
+    // Only while nobody answered: a human reply (panel or phone) after the hold was queued cancels it.
+    if (conv.state === "HUMAN_ACTIVE" || conv.state === "RESOLVED") return cancel("Você já respondeu");
+    const [human] = await db
+      .select({ id: messages.id })
+      .from(messages)
+      .where(and(eq(messages.conversationId, conv.id), eq(messages.direction, "out"), eq(messages.author, "human"), sql`${messages.createdAt} > ${msg.createdAt.toISOString()}`))
+      .limit(1);
+    if (human) return cancel("Você já respondeu");
+  } else if (msg.author === "ai" && !automationMaySpeak(conv.state)) return cancel("Humano assumiu a conversa");
   if (inst.status !== "open") return { status: "delay", until: new Date(Date.now() + 5 * 60_000), reason: "Número desconectado" };
 
   if (msg.kind === "outreach" || msg.kind === "followup") {
@@ -543,6 +592,7 @@ async function handleUpsert(inst: typeof whatsappInstances.$inferSelect, d: Upse
       link: `/inbox?c=${conv.id}`,
       priority: c.urgency === "high" ? "high" : "normal",
     });
+    if (settings.holdingReply && state !== "HUMAN_ACTIVE") await queueHoldingReply(orgId, conv.id, c.intent, settings).catch((e) => console.warn("[espera] falhou", e?.message));
     if (settings.operatorWhatsapp && state !== "HUMAN_ACTIVE") {
       try {
         await EvolutionClient.fromEnv().sendText(inst.name, settings.operatorWhatsapp, `Vendlia: lead quente — ${who}\n"${text.slice(0, 200)}"\n${env().APP_URL}/inbox?c=${conv.id}`);

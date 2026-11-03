@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { holdingText } from "@/server/whatsapp/service";
 import { normalizeBrPhone, isBrMobile, formatBrPhone } from "@/lib/phone";
 import { normalizeName, slugify } from "@/lib/text";
 import { scoreLead, outreachEligibility } from "@/server/scoring";
@@ -177,5 +178,16 @@ describe("misc", () => {
   it("guards handoff transitions", () => {
     expect(canTransition("AI_ACTIVE", "HUMAN_REQUESTED")).toBe(true);
     expect(canTransition("HUMAN_ACTIVE", "HUMAN_REQUESTED")).toBe(false);
+  });
+});
+
+describe("holding reply text", () => {
+  const hours = { businessHoursStart: 9, businessHoursEnd: 18 };
+  it("asks for a moment during business hours", () => {
+    expect(holdingText("price_request", new Date("2026-11-03T14:00:00Z"), hours)).toBe("Oi! Já vou te passar os valores certinhos. Só um instante.");
+  });
+  it("promises the next morning at night and Monday on Saturday night", () => {
+    expect(holdingText("purchase_intent", new Date("2026-11-04T01:00:00Z"), hours)).toMatch(/logo cedo, tudo bem\?$/); // Tue 22h local
+    expect(holdingText("purchase_intent", new Date("2026-11-08T00:30:00Z"), hours)).toMatch(/na segunda logo cedo/); // Sat 21h30 local
   });
 });

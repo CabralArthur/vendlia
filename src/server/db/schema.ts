@@ -32,6 +32,9 @@ export type OrgSettings = {
   followUpAfterHours: number;
   operatorWhatsapp?: string;
   sitesBaseDomain?: string;
+  /** Short "just a moment" reply to hot leads when nobody answers within N minutes. */
+  holdingReply: boolean;
+  holdingReplyAfterMinutes: number;
 };
 
 export const organizations = pgTable("organizations", {
@@ -389,7 +392,7 @@ export const messages = pgTable(
     conversationId: text("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
     direction: text("direction", { enum: ["in", "out"] }).notNull(),
     author: text("author", { enum: ["lead", "ai", "human", "system"] }).notNull(),
-    kind: text("kind", { enum: ["outreach", "followup", "reply", "inbound"] }).notNull().default("reply"),
+    kind: text("kind", { enum: ["outreach", "followup", "reply", "inbound", "holding"] }).notNull().default("reply"),
     body: text("body").notNull(),
     providerMessageId: text("provider_message_id"),
     status: text("status", { enum: ["queued", "sent", "delivered", "read", "failed", "received", "canceled"] })

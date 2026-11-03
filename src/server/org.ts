@@ -7,13 +7,15 @@ export const DEFAULT_OUTREACH_TEMPLATE =
 export function defaultOrgSettings(): OrgSettings {
   return {
     allowColdOutreach: true,
-    autoReplyInformational: false,
+    autoReplyInformational: true,
     classifierConfidenceThreshold: 0.7,
     businessHoursStart: 9,
     businessHoursEnd: 18,
     outreachTemplate: DEFAULT_OUTREACH_TEMPLATE,
     followUpEnabled: true,
     followUpAfterHours: 48,
+    holdingReply: true,
+    holdingReplyAfterMinutes: 5,
   };
 }
 
