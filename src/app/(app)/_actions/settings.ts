@@ -11,6 +11,7 @@ import { verifyWhatsappNumbers } from "@/server/discovery/run";
 import { randomToken } from "@/lib/text";
 import { normalizeBrPhone } from "@/lib/phone";
 import { audit } from "@/server/events";
+import { llmProvider, llmSiteModel, llmText } from "@/server/ai/llm";
 
 export async function saveOrgSettings(fd: FormData) {
   const s = await requireRole("owner", "admin");
@@ -135,5 +136,20 @@ export async function changePassword(fd: FormData) {
     if (pw.length < 8) throw new Error("Senha muito curta.");
     await db.update(users).set({ passwordHash: await hashPassword(pw) }).where(eq(users.id, s.userId));
     return "Senha alterada.";
+  });
+}
+
+/** Short call to the site model so the operator can see whether the AI works (and why not). */
+export async function testAiAction() {
+  const s = await requireSession();
+  return act("/settings#integracoes", async () => {
+    const provider = llmProvider();
+    if (!provider) throw new Error("Nenhuma chave de IA encontrada no servidor. Confira se OPENROUTER_API_KEY está nas variáveis do serviço web no Railway e faça Redeploy.");
+    const model = llmSiteModel(provider);
+    let err = "";
+    const t0 = Date.now();
+    const r = await llmText(s.orgId, "ai_test", { system: "Responda apenas: ok", user: "Teste de conexão.", model, maxTokens: 20, json: false, stream: true, timeoutMs: 60_000, onError: (m) => (err = m) });
+    if (!r) throw new Error(`A IA falhou (${provider}, ${model}): ${err}`);
+    return `IA funcionando: ${model} via ${provider} respondeu “${r.text.trim().slice(0, 40)}” em ${((Date.now() - t0) / 1000).toFixed(1)}s.`;
   });
 }

@@ -148,7 +148,7 @@ const BANNED = /(anos de (experi|mercado|tradi|hist)|desde (19|20)\d\d|fundad[oa
 
 /** Visible text only (no CSS / markup), used for grounding checks. */
 export function visibleText(html: string) {
-  return sanitizeHtml(html.replace(/<style>[\s\S]*?<\/style>/gi, " "), { allowedTags: [], allowedAttributes: {} })
+  return sanitizeHtml(html.replace(/<style>[\s\S]*?<\/style>/gi, " ").replace(/</g, " <"), { allowedTags: [], allowedAttributes: {} })
     .replace(/\{\{[^}]*\}\}/g, " ")
     .replace(/&[a-z]+;/g, " ")
     .replace(/\s+/g, " ")
@@ -162,11 +162,13 @@ export function checkDesign(html: string, b: BusinessFacts, opts: { whatsapp?: s
   if (html.length > 160_000) problems.push("site grande demais");
   if (!/<style>/i.test(html)) problems.push("sem CSS");
   const norm = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
-  if (!norm(text).includes(norm(b.name).slice(0, 18))) problems.push("o nome do negócio não aparece");
-  const banned = text.match(BANNED);
+  if (!norm(text).includes(norm(b.name).slice(0, 12).trim())) problems.push("o nome do negócio não aparece");
+  const banned = text.match(BANNED) ?? (!/24/.test(b.openingHours ?? "") ? text.match(/\b24\s?(h|horas)\b/i) : null);
   if (banned) problems.push(`afirmação não comprovada: "${banned[0]}"`);
   const facts = JSON.stringify(b).replace(/\D+/g, " ");
-  const numbers = (text.match(/\d{2,}/g) ?? []).filter((n) => !facts.split(" ").some((f) => f.includes(n)));
+  const year = String(new Date().getFullYear());
+  // Small numbers are section numbers, days and hours ("01", "Seg–Sáb 9h"); anything else must come from the facts.
+  const numbers = (text.match(/\d{2,}/g) ?? []).filter((n) => !(n.length <= 2 && Number(n) <= 31) && n !== year && !facts.split(" ").some((f) => f.includes(n)));
   if (numbers.length) problems.push(`números que não estão nos fatos: ${[...new Set(numbers)].slice(0, 5).join(", ")}`);
   if (opts.whatsapp && !/\{\{WA(:[^}]*)?\}\}/.test(html)) problems.push("sem link de WhatsApp");
   return problems;
@@ -197,14 +199,15 @@ export function googleFontsHref(f: { family: string; weights?: number[]; italic?
 
 /**
  * Asks the site model for a complete design. One retry with the validation problems as feedback.
- * Returns null when no LLM is configured or the result can't be made safe — callers fall back to the template.
+ * Returns { error } when no LLM is configured, the call fails or the result can't be made safe — callers fall back to the template.
  */
 export async function designSite(
   orgId: string,
   b: BusinessFacts,
   opts: { services: string[]; servicesAreSuggestions: boolean; photos?: string[]; previous?: SiteAi; instructions?: string; log?: (m: string) => void },
+  // returns { ai } on success or { error } with a human-readable reason
   fetchImpl?: typeof fetch,
-): Promise<SiteAi | null> {
+): Promise<{ ai?: SiteAi; error?: string }> {
   const whatsapp = b.phoneE164 && isBrMobile(b.phoneE164) ? b.phoneE164 : undefined;
   const facts = factsPayload(b, { whatsapp, services: opts.services, servicesAreSuggestions: opts.servicesAreSuggestions, photos: opts.photos ?? [] });
   const model = llmSiteModel();
@@ -215,24 +218,28 @@ export async function designSite(
     user += `\n\nCrie o site agora. Pense na direção de arte antes de escrever.`;
   }
   let totalCost = 0;
+  let lastProblem = "";
   for (let attempt = 0; attempt < 2; attempt++) {
-    const r = await llmText(orgId, "site_design", { system: SYSTEM, user, model, maxTokens: 24_000, timeoutMs: 420_000, json: false }, fetchImpl);
-    if (!r) return null;
+    let llmError = "";
+    const r = await llmText(orgId, "site_design", { system: SYSTEM, user, model, maxTokens: 24_000, timeoutMs: 600_000, json: false, stream: true, onError: (m) => (llmError = m) }, fetchImpl);
+    if (!r) return { error: llmError || "a IA não respondeu" };
     totalCost += r.costMicros;
     try {
       const { meta, html } = parseDesign(r.text);
       const clean = sanitizeDesign(html);
       const problems = checkDesign(clean, b, { whatsapp });
+      lastProblem = problems.join("; ");
       if (problems.length === 0) {
-        return { html: clean, fonts: meta.fonts, businessType: meta.businessType, concept: meta.concept, palette: meta.palette, model: r.model, costMicros: totalCost, generatedAt: new Date().toISOString(), instructions: opts.instructions };
+        return { ai: { html: clean, fonts: meta.fonts, businessType: meta.businessType, concept: meta.concept, palette: meta.palette, model: r.model, costMicros: totalCost, generatedAt: new Date().toISOString(), instructions: opts.instructions } };
       }
       opts.log?.(`Ajustando o site gerado: ${problems.join("; ")}`);
       user += `\n\nSua resposta anterior foi recusada por: ${problems.join("; ")}. Gere o site completo de novo corrigindo isso, no mesmo formato.`;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      lastProblem = `resposta fora do formato (${msg})`;
       opts.log?.(`Resposta inválida da IA: ${msg}`);
       user += `\n\nSua resposta anterior não seguiu o formato (${msg}). Responda exatamente com <meta>{...}</meta> e <site>...</site>.`;
     }
   }
-  return null;
+  return { error: `o site gerado foi recusado na conferência: ${lastProblem}` };
 }

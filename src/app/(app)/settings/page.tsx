@@ -7,11 +7,11 @@ import { Flash } from "@/components/flash";
 import { Submit } from "@/components/submit";
 import { getOrgSettings } from "@/server/org";
 import { env } from "@/server/env";
-import { llmConfigured } from "@/server/ai/llm";
+import { llmConfigured, llmProvider, llmSiteModel, monthSpendUsd } from "@/server/ai/llm";
 import { effectiveDailyLimit } from "@/server/whatsapp/limits";
 import { isDemoInstance } from "@/lib/demo";
 import { formatBrPhone } from "@/lib/phone";
-import { addMember, changePassword, createInstanceAction, instanceAction, saveOrgSettings } from "../_actions/settings";
+import { addMember, changePassword, createInstanceAction, instanceAction, saveOrgSettings, testAiAction } from "../_actions/settings";
 import { QrCode, RefreshCw, ShieldCheck, Pause, Play, Unplug, Trash2 } from "lucide-react";
 
 export const metadata = { title: "Configurações" };
@@ -62,6 +62,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const evoReady = !!(e.EVOLUTION_API_URL && e.EVOLUTION_API_KEY);
   const admin = s.role !== "operator";
   const ai = llmConfigured();
+  const aiSpent = ai ? await monthSpendUsd(s.orgId) : 0;
 
   return (
     <>
@@ -240,9 +241,13 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <ul className="divide-y divide-[var(--line)] rounded-[var(--radius-lg)] border border-[var(--line)] px-4">
             <Status ok={evoReady} label="WhatsApp (Evolution API)" detail="Envio do primeiro contato e respostas no Inbox." />
             <Status ok={!!e.GOOGLE_PLACES_API_KEY} label="Google Maps" detail="Busca de empresas com mais telefones. Sem ela, usa o OpenStreetMap." />
-            <Status ok={ai} label="Inteligência artificial" detail="Textos dos sites e leitura das respostas. Sem ela, usa regras." />
+            <Status ok={ai} label="Inteligência artificial" detail={ai ? `Cria os sites (${llmSiteModel()} via ${llmProvider()}). Gasto este mês: US$ ${aiSpent.toFixed(2)} de US$ ${e.LLM_MONTHLY_BUDGET_USD}.` : "Sem chave: os sites usam o modelo pronto. Configure OPENROUTER_API_KEY."} />
             <Status ok={!!e.SITES_BASE_DOMAIN} label="Domínio para os sites" detail="Endereços como cliente.sites.seudominio.com.br." />
           </ul>
+          <form action={testAiAction} className="flex flex-wrap items-center gap-3">
+            <Submit className="btn btn-secondary" pendingText="Testando a IA… (até 1 min)">Testar IA</Submit>
+            <span className="muted text-[0.8125rem]">Faz uma chamada curta ao modelo que cria os sites e mostra o resultado.</span>
+          </form>
         </Section>
       </div>
     </>

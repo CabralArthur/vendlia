@@ -39,12 +39,12 @@ export async function generateSiteForLead(
   const facts = { ...b, services: b.services ?? [] };
   const seg = segmentById(b.segment);
   const [prev] = await db.select().from(websites).where(eq(websites.leadId, leadId)).orderBy(desc(websites.createdAt)).limit(1);
-  const wantAi = (opts.mode ?? "ai") === "ai" && llmConfigured();
+  const wantAi = (opts.mode ?? "ai") === "ai";
   await setSiteGen(leadId, { status: "running", step: wantAi ? "A IA está criando o design e os textos (1 a 4 minutos)…" : "Montando o site…", mode: wantAi ? "ai" : "template", startedAt: Date.now() });
   try {
     const services = facts.services.length ? facts.services : seg.defaultServices;
     const photos = [prev?.content.coverImage, ...(prev?.content.gallery ?? [])].filter((x): x is string => !!x);
-    const [content, ai] = await Promise.all([
+    const [content, design] = await Promise.all([
       generateSiteContent(orgId, facts, opts.fetchImpl),
       wantAi
         ? designSite(
@@ -59,20 +59,19 @@ export async function generateSiteForLead(
               log: (m) => void setSiteGen(leadId, { status: "running", step: m }),
             },
             opts.fetchImpl,
-          ).catch((e) => {
-            console.error("[sites] design falhou", e instanceof Error ? e.message : e);
-            return null;
-          })
-        : Promise.resolve(null),
+          ).catch((e) => ({ ai: undefined, error: e instanceof Error ? e.message : String(e) }))
+        : Promise.resolve({ ai: undefined, error: undefined } as { ai?: undefined; error?: string }),
     ]);
+    const ai = design.ai;
+    if (design.error) console.error("[sites] design pela IA falhou:", design.error);
     if (prev) {
       content.coverImage = prev.content.coverImage;
       content.gallery = prev.content.gallery;
     }
     if (ai) content.ai = ai;
-    else if (wantAi) content.pendingReview = ["A IA não conseguiu gerar o design agora; foi usado o modelo padrão. Tente “Gerar de novo”.", ...content.pendingReview];
+    else if (wantAi) content.pendingReview = [`A IA não gerou o design (${design.error ?? "motivo desconhecido"}); foi usado o modelo pronto`, ...content.pendingReview];
     const siteId = await saveGenerated(orgId, leadId, b, content, opts.template ?? seg.template, prev, opts.instructions);
-    await setSiteGen(leadId, { status: "done", step: ai ? "Site criado pela IA." : "Site criado com o modelo padrão." });
+    await setSiteGen(leadId, { status: "done", step: ai ? "Site criado pela IA." : wantAi ? `A IA falhou: ${design.error}` : "Site criado com o modelo pronto." });
     return siteId;
   } catch (err) {
     await setSiteGen(leadId, { status: "failed", step: err instanceof Error ? err.message : "Falha ao gerar o site" });

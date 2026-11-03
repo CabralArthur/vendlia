@@ -30,7 +30,14 @@ function modelStub(texts: string[]) {
     calls.push({ body });
     const isDesign = body.model === "anthropic/claude-opus-5.5";
     const content = isDesign ? texts.shift() ?? "" : "{}"; // copy call returns junk → rule copy is used
-    return new Response(JSON.stringify({ choices: [{ message: { content } }], usage: { prompt_tokens: 5000, completion_tokens: 9000, cost: isDesign ? 0.2 : 0.001 } }));
+    const usage = { prompt_tokens: 5000, completion_tokens: 9000, cost: isDesign ? 0.2 : 0.001 };
+    if (body.stream) {
+      // Server-sent events in small chunks, usage in the last event (as OpenRouter does).
+      const parts = content.match(/[\s\S]{1,500}/g) ?? [""];
+      const sse = [": OPENROUTER PROCESSING\n\n", ...parts.map((p) => `data: ${JSON.stringify({ choices: [{ delta: { content: p } }] })}\n\n`), `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }], usage })}\n\n`, "data: [DONE]\n\n"].join("");
+      return new Response(sse, { headers: { "content-type": "text/event-stream" } });
+    }
+    return new Response(JSON.stringify({ choices: [{ message: { content } }], usage }));
   }) as unknown as typeof fetch;
   return { f, calls };
 }
@@ -48,6 +55,16 @@ describe("AI design: parse, sanitize, check", () => {
     const text = visibleText(clean);
     expect(text).toContain("Mariazinha");
     expect(text).not.toContain(".vai");
+  });
+
+  it("accepts section numbers and the current year, rejects invented big numbers", () => {
+    const base = sanitizeDesign(parseDesign(sample).html);
+    const ok = base.replace("Mesa posta na Tamarineira", `01 Mesa posta na Tamarineira ${new Date().getFullYear()}`);
+    expect(checkDesign(ok, facts, { whatsapp: "5581999991002" })).toEqual([]);
+    const bad = base.replace("Mesa posta na Tamarineira", "Mais de 500 pratos por dia");
+    expect(checkDesign(bad, facts, { whatsapp: "5581999991002" }).join()).toMatch(/500/);
+    const h24 = base.replace("Mesa posta na Tamarineira", "Aberto 24h");
+    expect(checkDesign(h24, facts, { whatsapp: "5581999991002" }).join()).toMatch(/24h/);
   });
 
   it("flags invented claims and numbers", () => {
@@ -92,6 +109,7 @@ describe("AI design: generation flow", () => {
     await generateSiteForLead(orgId, leadId, { fetchImpl: f });
     const designCalls = calls.filter((c) => c.body.model === "anthropic/claude-opus-5.5");
     expect(designCalls).toHaveLength(2);
+    expect(designCalls[0]!.body.stream).toBe(true);
     expect(designCalls[1]!.body.messages[1].content).toMatch(/não seguiu o formato/);
     const [w] = await db.select().from(websites).where(eq(websites.leadId, leadId));
     expect(w!.content.ai?.businessType).toMatch(/Boteco/);
@@ -107,7 +125,7 @@ describe("AI design: generation flow", () => {
     await generateSiteForLead(orgId, leadId, { fetchImpl: f });
     const [w] = await db.select().from(websites).where(eq(websites.leadId, leadId));
     expect(w!.content.ai).toBeUndefined();
-    expect(w!.content.pendingReview[0]).toMatch(/modelo padrão/);
+    expect(w!.content.pendingReview[0]).toMatch(/recusado na conferência.*modelo pronto/);
   });
 
   it("sends the current design and the operator's request when adjusting", async () => {
