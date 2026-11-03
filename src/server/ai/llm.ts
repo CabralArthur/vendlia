@@ -9,7 +9,9 @@ const PRICES_PER_MTOK: Record<string, [number, number]> = {
   // [input, output] USD per million tokens — conservative defaults, override with LLM_PRICE_IN / LLM_PRICE_OUT
   haiku: [1, 5],
   sonnet: [3, 15],
+  "opus-5": [4, 20],
   opus: [5, 25],
+  fable: [10, 50],
   "gpt-4o-mini": [0.15, 0.6],
 };
 
@@ -48,7 +50,16 @@ export function llmModel(provider = llmProvider()) {
   return "";
 }
 
-async function monthSpendUsd(orgId: string) {
+/** Model used to design whole sites (the strongest available). Override with LLM_SITE_MODEL. */
+export function llmSiteModel(provider = llmProvider()) {
+  const e = env();
+  if (e.LLM_SITE_MODEL) return e.LLM_SITE_MODEL;
+  if (provider === "openrouter") return "anthropic/claude-opus-5.5";
+  if (provider === "anthropic") return "claude-opus-5-5";
+  return llmModel(provider);
+}
+
+export async function monthSpendUsd(orgId: string) {
   const start = new Date();
   start.setUTCDate(1);
   start.setUTCHours(0, 0, 0, 0);
@@ -68,17 +79,18 @@ export function extractJson(text: string): unknown {
   return JSON.parse(raw.slice(start, end + 1));
 }
 
+export type TextResult = { text: string; model: string; inputTokens: number; outputTokens: number; costMicros: number };
+
 /**
- * Calls the configured LLM and validates its JSON output with zod.
- * Returns null when no LLM is configured, the monthly budget is exhausted, or the call fails —
- * callers must then use their deterministic fallback.
+ * Calls the configured LLM and returns raw text (usage is recorded).
+ * Returns null when no LLM is configured, the monthly budget is exhausted, or the call fails.
  */
-export async function llmJson<T>(
+export async function llmText(
   orgId: string,
   kind: string,
-  opts: { system: string; user: string; schema: z.ZodType<T>; maxTokens?: number },
+  opts: { system: string; user: string; maxTokens?: number; model?: string; timeoutMs?: number; json?: boolean },
   fetchImpl: typeof fetch = fetch,
-): Promise<LlmResult<T> | null> {
+): Promise<TextResult | null> {
   if (!llmConfigured()) return null;
   const e = env();
   if ((await monthSpendUsd(orgId)) >= e.LLM_MONTHLY_BUDGET_USD) {
@@ -87,27 +99,18 @@ export async function llmJson<T>(
   }
   try {
     let text = "";
-    let model = "";
     let inputTokens = 0;
     let outputTokens = 0;
     let costMicrosFromProvider: number | null = null;
     const provider = llmProvider()!;
-    model = llmModel(provider);
+    const model = opts.model ?? llmModel(provider);
+    const timeout = AbortSignal.timeout(opts.timeoutMs ?? 60_000);
     if (provider === "anthropic") {
       const res = await fetchImpl("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-api-key": e.ANTHROPIC_API_KEY!,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model,
-          max_tokens: opts.maxTokens ?? 1200,
-          system: opts.system,
-          messages: [{ role: "user", content: opts.user }],
-        }),
-        signal: AbortSignal.timeout(60_000),
+        headers: { "content-type": "application/json", "x-api-key": e.ANTHROPIC_API_KEY!, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({ model, max_tokens: opts.maxTokens ?? 1200, system: opts.system, messages: [{ role: "user", content: opts.user }] }),
+        signal: timeout,
       });
       if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 300)}`);
       const j = (await res.json()) as { content: { type: string; text?: string }[]; usage?: { input_tokens: number; output_tokens: number } };
@@ -127,13 +130,13 @@ export async function llmJson<T>(
         body: JSON.stringify({
           model,
           max_tokens: opts.maxTokens ?? 1200,
-          ...(isOR ? { usage: { include: true } } : { response_format: { type: "json_object" } }),
+          ...(isOR ? { usage: { include: true } } : opts.json !== false ? { response_format: { type: "json_object" } } : {}),
           messages: [
             { role: "system", content: opts.system },
             { role: "user", content: opts.user },
           ],
         }),
-        signal: AbortSignal.timeout(60_000),
+        signal: timeout,
       });
       if (!res.ok) throw new Error(`${isOR ? "OpenRouter" : "OpenAI"} ${res.status}: ${(await res.text()).slice(0, 300)}`);
       const j = (await res.json()) as {
@@ -150,14 +153,31 @@ export async function llmJson<T>(
     const [pi, po] = priceFor(model);
     const costMicros = costMicrosFromProvider ?? Math.round(inputTokens * pi + outputTokens * po);
     await db.insert(usageRecords).values({ orgId, kind, model, inputTokens, outputTokens, costMicros });
-    const parsed = opts.schema.safeParse(extractJson(text));
+    return { text, model, inputTokens, outputTokens, costMicros };
+  } catch (err) {
+    console.error(`[llm] falha (${kind})`, err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+/** Calls the configured LLM and validates its JSON output with zod (null → caller uses its fallback). */
+export async function llmJson<T>(
+  orgId: string,
+  kind: string,
+  opts: { system: string; user: string; schema: z.ZodType<T>; maxTokens?: number },
+  fetchImpl: typeof fetch = fetch,
+): Promise<LlmResult<T> | null> {
+  const r = await llmText(orgId, kind, opts, fetchImpl);
+  if (!r) return null;
+  try {
+    const parsed = opts.schema.safeParse(extractJson(r.text));
     if (!parsed.success) {
       console.warn(`[llm] JSON inválido (${kind})`, parsed.error.issues.slice(0, 3));
       return null;
     }
-    return { data: parsed.data, model, inputTokens, outputTokens };
+    return { data: parsed.data, model: r.model, inputTokens: r.inputTokens, outputTokens: r.outputTokens };
   } catch (err) {
-    console.error(`[llm] falha (${kind})`, err instanceof Error ? err.message : err);
+    console.warn(`[llm] JSON inválido (${kind})`, err instanceof Error ? err.message : err);
     return null;
   }
 }

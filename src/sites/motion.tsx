@@ -6,9 +6,9 @@ import { useEffect } from "react";
  * classes it adds never clash with the server HTML. Content stays visible without JS
  * and when the visitor prefers reduced motion.
  */
-export function SiteMotion() {
+export function SiteMotion({ root: rootSel = ".vs" }: { root?: string } = {}) {
   useEffect(() => {
-    const root = document.querySelector<HTMLElement>(".vs");
+    const root = document.querySelector<HTMLElement>(rootSel);
     if (!root) return;
     const header = root.querySelector(".top");
     const onScroll = () => header?.classList.toggle("scrolled", window.scrollY > 16);
@@ -18,7 +18,7 @@ export function SiteMotion() {
     let io: IntersectionObserver | undefined;
     if (!reduce && "IntersectionObserver" in window) {
       const vh = window.innerHeight;
-      const els = [...root.querySelectorAll<HTMLElement>(".rv")];
+      const els = [...root.querySelectorAll<HTMLElement>(".rv, [data-reveal]")];
       // What is already on screen stays put; only content below the fold animates in.
       els.forEach((e) => e.getBoundingClientRect().top < vh && e.classList.add("in"));
       root.classList.add("anim");
@@ -32,6 +32,6 @@ export function SiteMotion() {
       removeEventListener("scroll", onScroll);
       io?.disconnect();
     };
-  }, []);
+  }, [rootSel]);
   return null;
 }

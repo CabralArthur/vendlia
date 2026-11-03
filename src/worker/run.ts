@@ -27,7 +27,7 @@ export async function startWorkers(where: "worker" | "web") {
   if (started) return;
   started = true;
   make(QUEUES.discovery, 2, async (job) => runDiscovery(job.data.runId));
-  make(QUEUES.sites, 3, async (job) => generateSiteForLead(job.data.orgId, job.data.leadId, { template: job.data.template }));
+  make(QUEUES.sites, 3, async (job) => generateSiteForLead(job.data.orgId, job.data.leadId, { template: job.data.template, mode: job.data.mode, instructions: job.data.instructions }));
   make(QUEUES.inbound, 5, async (job) => processProviderEvent(job.data.providerEventId));
 
   // Outbound uses concurrency 1 per process to keep pacing deterministic.

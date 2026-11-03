@@ -8,6 +8,9 @@ import { publishWebsite, unpublishWebsite } from "@/server/sites/publish";
 import { queueOutreach } from "@/server/whatsapp/service";
 import { rollbackSite, saveSiteEdit } from "@/server/sites/service";
 import { audit } from "@/server/events";
+import { enqueue, QUEUES } from "@/server/queue";
+import { setSiteGen } from "@/server/sites/progress";
+import { llmConfigured } from "@/server/ai/llm";
 
 
 const lines = (v: string) => v.split("\n").map((x) => x.trim()).filter(Boolean);
@@ -43,6 +46,7 @@ export async function saveSiteAction(fd: FormData) {
         email: str(fd, "email") || undefined,
       },
       coverImage: /^https:\/\/\S+$/.test(str(fd, "coverImage")) ? str(fd, "coverImage") : undefined,
+      ai: undefined, // editing these fields switches the site to the ready-made template
       gallery: lines(str(fd, "gallery")).filter((u) => /^https:\/\/\S+$/.test(u)).slice(0, 8),
       sections: {
         ...w.content.sections,
@@ -108,5 +112,40 @@ export async function followUpNow(fd: FormData) {
     const r = await queueOutreach(s.orgId, leadId, s.userId, "followup");
     if (!r.ok) throw new Error(r.reason);
     return "Follow-up enfileirado.";
+  });
+}
+
+/** Asks the AI to adjust (or fully redo) the site. Photos given here are passed to the AI. */
+export async function aiSiteAction(fd: FormData) {
+  const s = await requireSession();
+  const siteId = str(fd, "siteId");
+  return act(`/studio/${siteId}`, async () => {
+    if (!llmConfigured()) throw new Error("Configure a OPENROUTER_API_KEY no Railway para usar a IA.");
+    const [w] = await db.select().from(websites).where(and(eq(websites.id, siteId), eq(websites.orgId, s.orgId)));
+    if (!w) throw new Error("Site não encontrado");
+    const instructions = str(fd, "instructions").slice(0, 1200);
+    const fresh = str(fd, "op") === "fresh";
+    const cover = str(fd, "coverImage");
+    const gallery = lines(str(fd, "gallery")).filter((u) => /^https:\/\/\S+$/.test(u)).slice(0, 8);
+    const coverImage = /^https:\/\/\S+$/.test(cover) ? cover : undefined;
+    if (coverImage !== w.content.coverImage || gallery.join() !== (w.content.gallery ?? []).join()) {
+      await saveSiteEdit(s.orgId, siteId, { content: { ...w.content, coverImage, gallery }, template: w.template, accent: w.accent }, "Fotos atualizadas");
+    }
+    if (!fresh && !instructions && !w.content.ai) throw new Error("Descreva o ajuste ou clique em “Criar outro design”.");
+    await setSiteGen(w.leadId, { status: "queued", step: "", mode: "ai", startedAt: Date.now() });
+    await enqueue(QUEUES.sites, "generate", { orgId: s.orgId, leadId: w.leadId, mode: "ai", instructions: fresh ? undefined : instructions || undefined }, { jobId: `site-${w.leadId}-${Date.now()}`, attempts: 1 });
+    return fresh || !instructions ? "A IA está criando um novo design (1 a 4 minutos)." : "A IA está aplicando o ajuste (1 a 4 minutos).";
+  });
+}
+
+/** Switches an AI site back to the ready-made template (keeps the AI version in history). */
+export async function useTemplateAction(fd: FormData) {
+  const s = await requireSession();
+  const siteId = str(fd, "siteId");
+  return act(`/studio/${siteId}`, async () => {
+    const [w] = await db.select().from(websites).where(and(eq(websites.id, siteId), eq(websites.orgId, s.orgId)));
+    if (!w) throw new Error("Site não encontrado");
+    const v = await saveSiteEdit(s.orgId, siteId, { content: { ...w.content, ai: undefined }, template: w.template, accent: w.accent }, "Trocado para o modelo pronto");
+    return `Versão ${v}: agora usando o modelo pronto. O design da IA continua no histórico.`;
   });
 }

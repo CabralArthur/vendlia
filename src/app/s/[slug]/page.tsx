@@ -1,7 +1,7 @@
 import "@/sites/fonts.css";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { SiteRender, jsonLd } from "@/sites/render";
+import { Site, jsonLd } from "@/sites/render";
 import { canonicalFor, countView, resolveBySlug } from "@/sites/load";
 
 type P = { params: Promise<{ slug: string }>; searchParams: Promise<{ k?: string; embed?: string }> };
@@ -30,7 +30,7 @@ export default async function SitePage({ params, searchParams }: P) {
   return (
     <>
       {!r.demo && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd(r.content)).replace(/</g, "\\u003c") }} />}
-      <SiteRender content={r.content} template={r.template} accent={r.accent} demo={r.demo} />
+      <Site content={r.content} template={r.template} accent={r.accent} demo={r.demo} />
     </>
   );
 }

@@ -14,6 +14,9 @@ import { formatBrPhone } from "@/lib/phone";
 import { addNote, discardLead, generatePreview, sendOutreach, setContactPermission, setLeadStageAction, updateBusiness } from "../../_actions/leads";
 import { followUpNow } from "../../_actions/sites";
 import { nextStep } from "@/lib/labels";
+import { getSiteGen } from "@/server/sites/progress";
+import { llmConfigured } from "@/server/ai/llm";
+import { SiteGenStatus } from "@/components/site-gen-status";
 import { ExternalLink, Send, PenLine, RefreshCw, Trash2 } from "lucide-react";
 
 const TEMPLATE_LABEL: Record<string, string> = { barber: "Barbearia / Salão", aesthetics: "Estética / Clínica", food: "Restaurante / Café", auto: "Oficina", services: "Serviços" };
@@ -56,6 +59,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   const positives = lead.scoreFactors.filter((f) => f.kind !== "missing");
   const missing = lead.scoreFactors.filter((f) => f.kind === "missing");
   const siteStatus = site ? SITE_STATUS_LABEL[site.status] ?? [site.status, "neutral"] : null;
+  const [gen, ai] = [await getSiteGen(lead.id), llmConfigured()];
 
   return (
     <>
@@ -96,8 +100,12 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             description={site ? `Versão ${site.version}, aberto ${site.views} ${site.views === 1 ? "vez" : "vezes"} pelo cliente` : "Gerado só com os dados confirmados desta empresa."}
             action={siteStatus && <Badge tone={siteStatus[1]}>{siteStatus[0]}</Badge>}
           >
+            <SiteGenStatus leadId={lead.id} initial={gen} />
             {site ? (
               <>
+                {site.content.ai && (
+                  <p className="muted mb-3 text-[0.8125rem]">Criado pela IA como <b className="text-[var(--ink)]">{site.content.ai.businessType}</b>{site.content.ai.concept ? `: ${site.content.ai.concept}` : "."}</p>
+                )}
                 <div className="overflow-hidden rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface-2)]">
                   <div className="flex items-center gap-1.5 border-b border-[var(--line)] px-3 py-2" aria-hidden>
                     <span className="h-2 w-2 rounded-full bg-[var(--line-strong)]" /><span className="h-2 w-2 rounded-full bg-[var(--line-strong)]" /><span className="h-2 w-2 rounded-full bg-[var(--line-strong)]" />
@@ -116,23 +124,24 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
                   <a href={previewUrl(site)} target="_blank" rel="noreferrer" className="btn btn-secondary"><ExternalLink size={15} /> Ver como o cliente</a>
                   <form action={generatePreview} className="ml-auto flex items-center gap-2">
                     <input type="hidden" name="leadId" value={lead.id} />
-                    <select name="template" className="field field-sm w-44" defaultValue={site.template} aria-label="Modelo do site">
-                      {TEMPLATES.map((t) => <option key={t} value={t}>{TEMPLATE_LABEL[t]}</option>)}
+                    <select name="template" className="field field-sm w-52" defaultValue={site.content.ai || ai ? "ai" : site.template} aria-label="Como gerar">
+                      {ai && <option value="ai">Criar com IA</option>}
+                      {TEMPLATES.map((t) => <option key={t} value={t}>Modelo pronto: {TEMPLATE_LABEL[t]}</option>)}
                     </select>
-                    <Submit className="btn btn-quiet btn-sm" pendingText="Gerando…" confirm="Gerar o site de novo? As edições feitas no Studio ficam salvas no histórico de versões."><RefreshCw size={14} /> Gerar de novo</Submit>
+                    <Submit className="btn btn-quiet btn-sm" pendingText="Enviando…" confirm="Gerar o site de novo? As versões anteriores ficam salvas no histórico."><RefreshCw size={14} /> Gerar de novo</Submit>
                   </form>
                 </div>
               </>
             ) : (
               <form action={generatePreview} className="flex flex-wrap items-end gap-3">
                 <input type="hidden" name="leadId" value={lead.id} />
-                <Field label="Modelo" className="w-56">
-                  <select name="template" className="field" defaultValue="">
-                    <option value="">Escolher pelo tipo de negócio</option>
-                    {TEMPLATES.map((t) => <option key={t} value={t}>{TEMPLATE_LABEL[t]}</option>)}
+                <Field label="Como gerar" className="w-64">
+                  <select name="template" className="field" defaultValue={ai ? "ai" : ""}>
+                    {ai ? <option value="ai">Criar com IA (design sob medida)</option> : <option value="">Modelo pelo tipo de negócio</option>}
+                    {TEMPLATES.map((t) => <option key={t} value={t}>Modelo pronto: {TEMPLATE_LABEL[t]}</option>)}
                   </select>
                 </Field>
-                <Submit className="btn btn-primary" pendingText="Gerando…">Gerar site</Submit>
+                <Submit className="btn btn-primary" pendingText="Enviando…">Gerar site</Submit>
               </form>
             )}
           </Card>

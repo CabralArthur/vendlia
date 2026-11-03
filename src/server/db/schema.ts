@@ -221,6 +221,19 @@ export const discoveryRuns = pgTable("discovery_runs", {
 export const TEMPLATES = ["barber", "aesthetics", "food", "auto", "services"] as const;
 export type TemplateId = (typeof TEMPLATES)[number];
 
+/** A whole site designed by the AI (sanitized HTML + CSS with link placeholders). */
+export type SiteAi = {
+  html: string;
+  fonts: { family: string; weights?: number[]; italic?: boolean }[];
+  businessType: string;
+  concept?: string;
+  palette?: string[];
+  model: string;
+  costMicros: number;
+  generatedAt: string;
+  instructions?: string;
+};
+
 export type SiteContent = {
   businessName: string;
   tagline: string;
@@ -252,6 +265,8 @@ export type SiteContent = {
   coverImage?: string;
   /** Optional extra photos (https URLs) supplied by the operator. */
   gallery?: string[];
+  /** When present, the site is rendered from this AI design instead of the template. */
+  ai?: SiteAi;
 };
 
 export const websites = pgTable(

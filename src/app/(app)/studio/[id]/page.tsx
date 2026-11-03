@@ -10,10 +10,25 @@ import { THEMES } from "@/sites/themes";
 import { previewUrl } from "@/server/whatsapp/service";
 import { siteUrls } from "@/server/sites/publish";
 import { env } from "@/server/env";
-import { publishAction, rollbackAction, saveSiteAction, setDomainAction, unpublishAction } from "../../_actions/sites";
-import { ExternalLink } from "lucide-react";
+import { aiSiteAction, publishAction, rollbackAction, saveSiteAction, setDomainAction, unpublishAction, useTemplateAction } from "../../_actions/sites";
+import { getSiteGen } from "@/server/sites/progress";
+import { llmConfigured } from "@/server/ai/llm";
+import { SiteGenStatus } from "@/components/site-gen-status";
+import { ExternalLink, Sparkles } from "lucide-react";
 
 export const metadata = { title: "Editar site" };
+
+function Collapsible({ collapsed, label, children }: { collapsed: boolean; label: string; children: React.ReactNode }) {
+  if (!collapsed) return <>{children}</>;
+  return (
+    <details className="group">
+      <summary className="muted cursor-pointer list-none text-[0.8125rem] font-medium hover:text-[var(--ink)]">
+        <span className="inline-block transition-transform group-open:rotate-90">›</span> {label}
+      </summary>
+      <div className="mt-4">{children}</div>
+    </details>
+  );
+}
 
 export default async function StudioPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; err?: string }> }) {
   const s = await requireSession();
@@ -28,6 +43,7 @@ export default async function StudioPage({ params, searchParams }: { params: Pro
   const c = w.content;
   const pairs = <T,>(arr: T[], f: (x: T) => string) => arr.map(f).join("\n");
   const e = env();
+  const [gen, aiOn] = [await getSiteGen(w.leadId), llmConfigured()];
   const unpublishedChanges = w.status === "published" && w.publishedVersion !== w.version;
 
   return (
@@ -40,6 +56,45 @@ export default async function StudioPage({ params, searchParams }: { params: Pro
       />
       <Flash sp={sp} />
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
+        <div className="space-y-6">
+        <SiteGenStatus leadId={w.leadId} initial={gen} />
+        {(c.ai || aiOn) && (
+          <Card
+            title={<span className="inline-flex items-center gap-2"><Sparkles size={16} /> {c.ai ? "Design criado pela IA" : "Criar com IA"}</span>}
+            description={c.ai ? `${c.ai.businessType}${c.ai.concept ? `. ${c.ai.concept}` : ""}` : "A IA cria um design sob medida para este negócio, com tipografia, cores e textos próprios."}
+          >
+            {c.ai && (
+              <p className="muted mb-4 text-[0.8125rem]">
+                Fontes: {c.ai.fonts.map((f) => f.family).join(" + ") || "padrão"} · Modelo: {c.ai.model} · Custo: US$ {(c.ai.costMicros / 1_000_000).toFixed(2)}
+              </p>
+            )}
+            <form action={aiSiteAction} className="space-y-4">
+              <input type="hidden" name="siteId" value={w.id} />
+              {c.ai && (
+                <Field label="Pedir um ajuste" hint="Ex.: deixe mais escuro e sofisticado; troque a fonte do título por uma mais clássica; destaque o delivery.">
+                  <textarea className="field min-h-20" name="instructions" placeholder="Descreva o que mudar…" />
+                </Field>
+              )}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Foto de capa" optional hint="Foto do próprio negócio, com autorização."><input className="field" name="coverImage" type="url" placeholder="https://…" defaultValue={c.coverImage ?? ""} /></Field>
+                <Field label="Mais fotos" optional hint="Uma por linha (https)."><textarea className="field min-h-10" name="gallery" defaultValue={(c.gallery ?? []).join("\n")} /></Field>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {c.ai && <Submit className="btn btn-primary" name="op" value="adjust" pendingText="Enviando…">Aplicar ajuste</Submit>}
+                <Submit className={c.ai ? "btn btn-secondary" : "btn btn-primary"} name="op" value="fresh" pendingText="Enviando…" confirm={c.ai ? "Criar um design totalmente novo? O atual fica no histórico." : undefined}>
+                  <Sparkles size={15} /> {c.ai ? "Criar outro design" : "Criar com IA"}
+                </Submit>
+              </div>
+            </form>
+            {c.ai && (
+              <form action={useTemplateAction} className="mt-3 border-t border-[var(--line)] pt-3">
+                <input type="hidden" name="siteId" value={w.id} />
+                <Submit className="btn btn-quiet btn-sm" pendingText="Trocando…" confirm="Trocar para o modelo pronto? O design da IA fica no histórico de versões.">Usar o modelo pronto em vez do design da IA</Submit>
+              </form>
+            )}
+          </Card>
+        )}
+        <Collapsible collapsed={!!c.ai} label="Editar campo a campo no modelo pronto (substitui o design da IA)">
         <form action={saveSiteAction} className="space-y-6">
           <input type="hidden" name="siteId" value={w.id} />
           <Card title="Aparência">
@@ -59,7 +114,7 @@ export default async function StudioPage({ params, searchParams }: { params: Pro
               </div>
               <Field label="Título principal"><input className="field" name="heroTitle" defaultValue={c.heroTitle} /></Field>
               <Field label="Subtítulo"><textarea className="field min-h-16" name="heroSubtitle" defaultValue={c.heroSubtitle} /></Field>
-              <Field label="Foto de capa" optional hint="Link https de uma foto do próprio negócio (com autorização do dono). Sem foto, o site usa uma ilustração do nicho."><input className="field" name="coverImage" type="url" placeholder="https://…" defaultValue={c.coverImage ?? ""} /></Field>
+              <Field label="Foto de capa" optional hint="Link https de uma foto do próprio negócio (com autorização do dono). Com foto, o topo do site vira uma imagem em tela cheia."><input className="field" name="coverImage" type="url" placeholder="https://…" defaultValue={c.coverImage ?? ""} /></Field>
               <Field label="Mais fotos" optional hint="Uma por linha (links https). Aparecem numa galeria depois dos serviços."><textarea className="field min-h-16" name="gallery" defaultValue={(c.gallery ?? []).join("\n")} /></Field>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Título da seção de serviços" optional><input className="field" name="servicesTitle" defaultValue={c.sections?.servicesTitle ?? ""} /></Field>
@@ -87,6 +142,8 @@ export default async function StudioPage({ params, searchParams }: { params: Pro
           </Card>
           <div className="sticky bottom-0 z-10 -mx-1 flex items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-[var(--line)] bg-[var(--surface)]/95 px-4 py-3 backdrop-blur"><span className="muted text-[0.8125rem]">Cada salvamento vira uma nova versão. O site no ar só muda quando você publicar.</span><Submit className="btn btn-primary" pendingText="Salvando…">Salvar versão</Submit></div>
         </form>
+        </Collapsible>
+        </div>
 
         <div className="space-y-6">
 

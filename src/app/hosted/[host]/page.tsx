@@ -1,7 +1,7 @@
 import "@/sites/fonts.css";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { SiteRender, jsonLd } from "@/sites/render";
+import { Site, jsonLd } from "@/sites/render";
 import { canonicalFor, countView, resolveByHost } from "@/sites/load";
 
 type P = { params: Promise<{ host: string }> };
@@ -27,7 +27,7 @@ export default async function HostedSite({ params }: P) {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd(r.content)).replace(/</g, "\\u003c") }} />
-      <SiteRender content={r.content} template={r.template} accent={r.accent} demo={false} />
+      <Site content={r.content} template={r.template} accent={r.accent} demo={false} />
     </>
   );
 }

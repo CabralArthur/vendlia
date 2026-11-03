@@ -9,7 +9,8 @@ import { SEGMENTS } from "@/server/discovery/segments";
 import { ingestCandidates, rescoreLead } from "@/server/discovery/ingest";
 import { mapCsvRows, parseCsv, type Candidate } from "@/server/discovery/connectors";
 import { setStage, logLeadEvent, audit } from "@/server/events";
-import { generateSiteForLead } from "@/server/sites/service";
+import { setSiteGen } from "@/server/sites/progress";
+import { llmConfigured } from "@/server/ai/llm";
 import { queueOutreach } from "@/server/whatsapp/service";
 import { normalizeBrPhone } from "@/lib/phone";
 import { normalizeName, onlyDigits } from "@/lib/text";
@@ -160,9 +161,14 @@ export async function generatePreview(fd: FormData) {
   const s = await requireSession();
   const leadId = str(fd, "leadId");
   return act(`/leads/${leadId}`, async () => {
-    const t = str(fd, "template");
-    await generateSiteForLead(s.orgId, leadId, { template: (t || undefined) as never });
-    return "Demonstração pronta.";
+    const [l] = await db.select({ id: leads.id }).from(leads).where(and(eq(leads.id, leadId), eq(leads.orgId, s.orgId)));
+    if (!l) throw new Error("Lead não encontrado");
+    const choice = str(fd, "template");
+    const mode = !choice || choice === "ai" ? "ai" : "template";
+    const template = mode === "template" ? choice : undefined;
+    await setSiteGen(leadId, { status: "queued", step: "", mode: mode === "ai" && llmConfigured() ? "ai" : "template", startedAt: Date.now() });
+    await enqueue(QUEUES.sites, "generate", { orgId: s.orgId, leadId, mode, template }, { jobId: `site-${leadId}-${Date.now()}`, attempts: 1 });
+    return mode === "ai" && llmConfigured() ? "A IA está criando o site. Leva de 1 a 4 minutos; acompanhe abaixo." : "Gerando o site…";
   });
 }
 
@@ -179,7 +185,10 @@ export async function bulkAction(fd: FormData) {
     const owned = await db.select({ id: leads.id }).from(leads).where(and(eq(leads.orgId, s.orgId), inArray(leads.id, list)));
     const op = str(fd, "op");
     if (op === "preview") {
-      for (const l of owned) await enqueue(QUEUES.sites, "generate", { orgId: s.orgId, leadId: l.id }, { jobId: `site-${l.id}-${Date.now()}` });
+      for (const l of owned) {
+        await setSiteGen(l.id, { status: "queued", step: "", mode: llmConfigured() ? "ai" : "template", startedAt: Date.now() });
+        await enqueue(QUEUES.sites, "generate", { orgId: s.orgId, leadId: l.id, mode: "ai" }, { jobId: `site-${l.id}-${Date.now()}`, attempts: 1 });
+      }
       return `${owned.length} demonstrações sendo geradas.`;
     }
     if (op === "outreach") {

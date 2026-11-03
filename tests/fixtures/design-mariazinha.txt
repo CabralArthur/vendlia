@@ -1,0 +1,69 @@
+<meta>{"businessType":"Boteco e restaurante de comida brasileira","fonts":[{"family":"Gloock","weights":[400]},{"family":"Familjen Grotesk","weights":[400,500,600]}],"palette":["#f3ead8","#1d1a16","#c4421a","#2f5d3a","#e8b04b"],"concept":"Cardápio de boteco pernambucano: papel creme, tinta preta, vermelho de toalha xadrez e faixas de azulejo."}</meta>
+<site>
+<style>
+.vai{--paper:#f3ead8;--ink:#1d1a16;--red:#c4421a;--green:#2f5d3a;--gold:#e8b04b;--line:rgba(29,26,22,.16);background:var(--paper);color:var(--ink);font-family:"Familjen Grotesk",system-ui,sans-serif;font-size:17px;line-height:1.6;overflow-x:clip}
+.vai a{color:inherit;text-decoration:none}
+.vai .w{width:min(1180px,100% - 40px);margin-inline:auto}
+.vai .bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;border-bottom:1.5px solid var(--ink)}
+.vai .logo{font-family:"Gloock",Georgia,serif;font-size:22px;letter-spacing:-.01em}
+.vai .pill{display:inline-flex;align-items:center;gap:8px;background:var(--red);color:#fff;border-radius:999px;padding:12px 20px;font-weight:600;font-size:15px;transition:transform .25s,background .25s}
+.vai .pill:hover{transform:translateY(-2px);background:#a8350f}
+.vai .pill.ghost{background:transparent;color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--ink)}
+.vai .tiles{height:22px;background:conic-gradient(from 45deg at 50% 50%,var(--green) 0 25%,var(--paper) 0 50%,var(--green) 0 75%,var(--paper) 0) 0 0/22px 22px;opacity:.9}
+.vai .hero{padding:clamp(48px,8vw,104px) 0 clamp(40px,6vw,72px);display:grid;gap:40px}
+.vai .kick{font-size:13px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--red)}
+.vai h1{font-family:"Gloock",Georgia,serif;font-weight:400;font-size:clamp(52px,9.5vw,148px);line-height:.92;letter-spacing:-.03em;margin:18px 0 0;text-wrap:balance;animation:up .9s cubic-bezier(.2,.8,.2,1) both}
+.vai h1 span{color:var(--red);font-style:italic}
+.vai .lead{font-size:clamp(18px,1.7vw,22px);max-width:30em;margin:26px 0 30px;animation:up .9s .12s both}
+.vai .row{display:flex;flex-wrap:wrap;gap:12px;animation:up .9s .2s both}
+.vai .info{display:grid;border-top:1.5px solid var(--ink);border-bottom:1.5px solid var(--ink)}
+.vai .info div{padding:18px 0;border-bottom:1px solid var(--line)}
+.vai .info b{display:block;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--red);margin-bottom:4px}
+@media(min-width:760px){.vai .info{grid-template-columns:repeat(3,1fr)}.vai .info div{border-bottom:0;padding:22px 24px}.vai .info div+div{border-left:1px solid var(--line)}}
+.vai section{padding:clamp(72px,10vw,128px) 0}
+.vai h2{font-family:"Gloock",Georgia,serif;font-weight:400;font-size:clamp(38px,5vw,68px);line-height:1;letter-spacing:-.02em;margin:0;text-wrap:balance}
+.vai .about{display:grid;gap:28px}
+.vai .about p{font-size:clamp(19px,2vw,24px);margin:0;max-width:32em}
+@media(min-width:900px){.vai .about{grid-template-columns:1fr 1.2fr;align-items:end}}
+.vai .menu{background:var(--ink);color:var(--paper)}
+.vai .menu .head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:end;gap:16px;margin-bottom:40px}
+.vai .menu .head p{opacity:.7;margin:0}
+.vai .item{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px 24px;padding:28px 0;border-top:1px dashed rgba(243,234,216,.3);transition:padding .3s}
+.vai .item:last-child{border-bottom:1px dashed rgba(243,234,216,.3)}
+.vai .item h3{font-family:"Gloock",Georgia,serif;font-weight:400;font-size:clamp(30px,3.6vw,48px);margin:0;line-height:1}
+.vai .item p{margin:0;opacity:.7;grid-column:1}
+.vai .item .go{grid-row:1/span 2;grid-column:2;color:var(--gold);font-weight:600;white-space:nowrap}
+.vai .item:hover{padding-left:14px}
+.vai .visit{display:grid;gap:32px}
+@media(min-width:900px){.vai .visit{grid-template-columns:1fr 1.3fr}}
+.vai .list{list-style:none;margin:28px 0;padding:0}
+.vai .list li{padding:14px 0;border-bottom:1px solid var(--line)}
+.vai .list b{display:block;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--red)}
+.vai .map{min-height:360px;border:1.5px solid var(--ink);border-radius:4px;overflow:hidden}
+.vai .end{background:var(--red);color:#fff;text-align:center}
+.vai .end h2{font-size:clamp(44px,7vw,104px)}
+.vai .end .pill{background:var(--paper);color:var(--ink);margin-top:28px}
+.vai footer{padding:32px 0 96px;font-size:14px;display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px}
+.vai .fixed{position:fixed;left:12px;right:12px;bottom:12px;z-index:20;justify-content:center;padding:15px}
+@media(min-width:760px){.vai .fixed{display:none}.vai footer{padding-bottom:32px}}
+.vai.anim [data-reveal]{opacity:0;transform:translateY(24px);transition:opacity .8s,transform .8s}
+.vai.anim [data-reveal].in{opacity:1;transform:none}
+@keyframes up{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.vai *{animation:none!important;transition:none!important}}
+</style>
+<header class="w bar"><a class="logo" href="#inicio">Mariazinha</a><a class="pill" href="{{WA}}">Fazer pedido</a></header>
+<main id="inicio">
+<div class="w hero"><div><p class="kick">Bar e comida brasileira · Tamarineira</p><h1>Mariazinha <span>Bar e Comida Brasileira</span></h1><p class="lead">Almoço e petiscos na Tamarineira, Recife. Venha sentar com a gente ou mande seu pedido pelo WhatsApp.</p><div class="row"><a class="pill" href="{{WA}}">Pedir pelo WhatsApp</a><a class="pill ghost" href="{{MAPS}}">Como chegar</a></div></div></div>
+<div class="tiles" aria-hidden="true"></div>
+<div class="w info"><div><b>Horário</b>Seg a Sáb 11h–16h · Dom 11h–15h</div><div><b>Endereço</b>Rua Cônego Barata, 210</div><div><b>WhatsApp</b>(81) 99999-1002</div></div>
+<section class="w about" id="sobre"><h2 data-reveal>Mesa posta na Tamarineira</h2><p data-reveal>Comida brasileira para o almoço de todo dia e para ficar mais um pouco. Se preferir, a gente leva até você.</p></section>
+<section class="menu" id="cardapio"><div class="w"><div class="head"><h2 data-reveal>Cardápio</h2><p>Toque no item para pedir pelo WhatsApp.</p></div>
+<a class="item" data-reveal href="{{WA:Quero pedir: Almoço}}"><h3>Almoço</h3><p>Pratos para o almoço do dia a dia.</p><span class="go">Pedir →</span></a>
+<a class="item" data-reveal href="{{WA:Quero pedir: Delivery}}"><h3>Delivery</h3><p>Peça pelo WhatsApp e receba onde estiver.</p><span class="go">Pedir →</span></a></div></section>
+<section class="w visit" id="visite"><div data-reveal><h2>Como chegar</h2><ul class="list"><li><b>Endereço</b><a href="{{MAPS}}">Rua Cônego Barata, 210 · Tamarineira, Recife</a></li><li><b>Horário</b>Seg a Sáb 11h–16h · Dom 11h–15h</li><li><b>Instagram</b><a href="{{INSTAGRAM}}">@mariazinhabar</a></li></ul><a class="pill" href="{{WA}}">Falar no WhatsApp</a></div><div class="map" data-reveal>{{MAP}}</div></section>
+<section class="end"><div class="w"><h2 data-reveal>Bora almoçar?</h2><a class="pill" href="{{WA:Quero fazer um pedido}}">Fazer pedido</a></div></section>
+</main>
+<footer class="w"><span>Mariazinha Bar e Comida Brasileira · Tamarineira, Recife</span><span>© {{YEAR}}</span></footer>
+<a class="pill fixed" href="{{WA}}">Pedir pelo WhatsApp</a>
+<script>alert("x")</script>
+</site>

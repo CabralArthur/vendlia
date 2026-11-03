@@ -20,6 +20,8 @@ const schema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   LLM_MODEL: z.string().optional(),
+  /** Model that designs whole sites. Default: the strongest Claude model on the chosen provider. */
+  LLM_SITE_MODEL: z.string().optional(),
   LLM_MONTHLY_BUDGET_USD: z.coerce.number().default(30),
 
   // Discovery sources

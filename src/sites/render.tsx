@@ -2,6 +2,7 @@ import type { SiteContent, TemplateId } from "@/server/db/schema";
 import { THEMES, type Theme } from "./themes";
 import { SiteMotion } from "./motion";
 import { formatBrPhone } from "@/lib/phone";
+import { fillPlaceholders, googleFontsHref } from "@/server/ai/sitedesign";
 
 type Props = { content: SiteContent; template: TemplateId; accent: string; demo: boolean; demoNote?: string };
 
@@ -271,6 +272,54 @@ function Seal({ name, place, accent, ink }: { name: string; place: string; accen
         {monogram(name)}
       </text>
     </svg>
+  );
+}
+
+/** Map embed + "open in maps" link for a site's contact info. */
+export function mapUrls(c: SiteContent) {
+  const place = [c.contact.city, c.contact.state].filter(Boolean).join(" - ");
+  const fullAddress = c.contact.address ? `${c.contact.address}${place && !c.contact.address.includes(c.contact.city ?? "§") ? `, ${place}` : ""}` : undefined;
+  const hasGeo = !!(c.contact.lat && c.contact.lng);
+  const embed = hasGeo
+    ? `https://www.openstreetmap.org/export/embed.html?bbox=${c.contact.lng! - 0.005},${c.contact.lat! - 0.0035},${c.contact.lng! + 0.005},${c.contact.lat! + 0.0035}&layer=mapnik&marker=${c.contact.lat},${c.contact.lng}`
+    : fullAddress
+      ? `https://maps.google.com/maps?q=${encodeURIComponent(fullAddress)}&output=embed`
+      : undefined;
+  const link = fullAddress || hasGeo
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(hasGeo && !fullAddress ? `${c.contact.lat},${c.contact.lng}` : `${c.businessName} ${fullAddress}`)}`
+    : undefined;
+  return { embed, link, fullAddress, place };
+}
+
+/** Renders the AI design when there is one, otherwise the niche template. */
+export function Site(props: Props) {
+  return props.content.ai ? <AiSiteRender content={props.content} demo={props.demo} demoNote={props.demoNote} /> : <SiteRender {...props} />;
+}
+
+export function AiSiteRender({ content: c, demo, demoNote }: { content: SiteContent; demo: boolean; demoNote?: string }) {
+  const ai = c.ai!;
+  const m = mapUrls(c);
+  const html = fillPlaceholders(ai.html, {
+    whatsapp: c.contact.whatsapp,
+    phone: c.contact.phone,
+    email: c.contact.email,
+    instagram: c.contact.instagram,
+    mapsUrl: m.link,
+    mapEmbed: m.embed,
+    name: c.businessName,
+  });
+  return (
+    <>
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+      {ai.fonts.map((f) => <link key={f.family} rel="stylesheet" href={googleFontsHref(f)} />)}
+      <style dangerouslySetInnerHTML={{ __html: `html,body{margin:0;padding:0}.vai{min-height:100vh;overflow-x:clip}.vai *,.vai *::before,.vai *::after{box-sizing:border-box}.vai img{max-width:100%}#vd-demo{position:relative;z-index:2147483000;background:#14171a!important;color:#d7dbe0!important;font:500 12.5px/1.4 system-ui,sans-serif!important;padding:8px 16px!important;text-align:center!important;margin:0!important}#vd-demo b{color:#fff;font-weight:600}` }} />
+      {demo && (
+        <p id="vd-demo" role="note"><b>Prévia de demonstração.</b> Não é o site oficial do estabelecimento.{demoNote ? ` ${demoNote}` : ""}</p>
+      )}
+      <div className="vai" dangerouslySetInnerHTML={{ __html: html }} />
+      <SiteMotion root=".vai" />
+    </>
   );
 }
 
