@@ -201,6 +201,8 @@ export const leadEvents = pgTable(
   (t) => [index("lead_events_lead").on(t.leadId, t.createdAt)],
 );
 
+export type RunLog = { t: string; msg: string; level: "info" | "ok" | "warn" | "error" };
+
 export const discoveryRuns = pgTable("discovery_runs", {
   id: id(),
   orgId: orgId(),
@@ -210,6 +212,8 @@ export const discoveryRuns = pgTable("discovery_runs", {
   found: integer("found").notNull().default(0),
   created: integer("created").notNull().default(0),
   error: text("error"),
+  /** Step-by-step progress shown live on the Prospecção screen (persisted, so a refresh keeps it). */
+  logs: jsonb("logs").$type<RunLog[]>().notNull().default([]),
   createdAt: createdAt(),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
 });
@@ -242,6 +246,10 @@ export type SiteContent = {
   seo: { title: string; description: string };
   pendingReview: string[];
   generatedBy: "llm" | "rules";
+  /** Optional section copy (AI or operator). Renderer falls back to niche defaults. */
+  sections?: { servicesTitle?: string; servicesIntro?: string; highlightsTitle?: string; ctaTitle?: string; ctaText?: string };
+  /** Optional cover photo URL supplied by the operator (must be licensed or provided by the client). */
+  coverImage?: string;
 };
 
 export const websites = pgTable(

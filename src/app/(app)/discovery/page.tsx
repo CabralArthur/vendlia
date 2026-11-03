@@ -1,14 +1,15 @@
-import Link from "next/link";
 import { desc, eq } from "drizzle-orm";
 import { requireSession } from "@/server/auth";
 import { db, discoveryRuns } from "@/server/db";
-import { Badge, Card, Field, PageHeader, timeAgo } from "@/components/ui";
+import { Card, Field, PageHeader } from "@/components/ui";
 import { Flash } from "@/components/flash";
 import { Submit } from "@/components/submit";
 import { SEGMENTS, UF_DDD, segmentById } from "@/server/discovery/segments";
 import { env } from "@/server/env";
 import { addManualBusiness, importCsv, startDiscovery } from "../_actions/leads";
 import { FilePicker } from "@/components/file-picker";
+import { DiscoveryRuns, type RunView } from "@/components/discovery-runs";
+import { redis } from "@/server/redis";
 import { Search, Upload, UserPlus } from "lucide-react";
 
 export const metadata = { title: "Prospecção" };
@@ -32,19 +33,30 @@ function UfSelect({ defaultValue = "PE" }: { defaultValue?: string }) {
   );
 }
 
-const RUN_STATUS: Record<string, [string, "neutral" | "blue" | "green" | "red"]> = {
-  queued: ["Na fila", "neutral"],
-  running: ["Buscando", "blue"],
-  done: ["Concluída", "green"],
-  failed: ["Falhou", "red"],
-};
 
 export default async function DiscoveryPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
   const s = await requireSession();
   const sp = await searchParams;
   const runs = await db.select().from(discoveryRuns).where(eq(discoveryRuns.orgId, s.orgId)).orderBy(desc(discoveryRuns.createdAt)).limit(10);
   const hasGoogle = !!env().GOOGLE_PLACES_API_KEY;
-  const stuck = runs.some((r) => r.status === "queued" && Date.now() - r.createdAt.getTime() > 3 * 60_000);
+  const hb = await redis().get("vendlia:worker:heartbeat").catch(() => null);
+  const workerOk = !!hb && Date.now() - Number(hb) < 3 * 60_000;
+  const runViews: RunView[] = runs.map((r) => {
+    const p = r.params as { city: string; state: string; segment: string };
+    return {
+      id: r.id,
+      source: r.source,
+      status: r.status,
+      found: r.found,
+      created: r.created,
+      error: r.error,
+      logs: r.logs,
+      createdAt: r.createdAt.toISOString(),
+      finishedAt: r.finishedAt?.toISOString() ?? null,
+      label: `${segmentById(p.segment).label} em ${p.city}/${p.state}`,
+      segment: p.segment,
+    };
+  });
 
   return (
     <>
@@ -77,41 +89,8 @@ export default async function DiscoveryPage({ searchParams }: { searchParams: Pr
         </form>
       </Card>
 
-      <Card className="mt-6" title="Buscas recentes" flush>
-        {runs.length === 0 ? (
-          <p className="muted px-5 py-6 text-sm">Nenhuma busca ainda.</p>
-        ) : (
-          <ul className="divide-y divide-[var(--line)]">
-            {runs.map((r) => {
-              const p = r.params as { city: string; state: string; segment: string };
-              const [label, tone] = RUN_STATUS[r.status] ?? ["—", "neutral"];
-              return (
-                <li key={r.id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 px-5 py-3.5">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold">
-                      {segmentById(p.segment).label} em {p.city}/{p.state}
-                    </div>
-                    <div className="muted text-[0.8125rem]">
-                      {r.source === "google_places" ? "Google Maps" : "OpenStreetMap"}, {timeAgo(r.createdAt)}
-                      {r.status === "done" && <> — {r.created} {r.created === 1 ? "nova empresa" : "novas empresas"} de {r.found} encontradas</>}
-                    </div>
-                    {r.error && <div className="mt-1 text-[0.8125rem] text-[var(--danger)]">{r.error}</div>}
-                    {r.status === "done" && r.found === 0 && <div className="mt-1 text-[0.8125rem] text-[var(--warn)]">Nada encontrado. Confira o nome da cidade e a UF, ou tente outro tipo de negócio.</div>}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge tone={tone}>{label}</Badge>
-                    {r.status === "done" && r.created > 0 && <Link href={`/leads?segment=${p.segment}`} className="btn btn-secondary btn-sm">Ver leads</Link>}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        {stuck && (
-          <p className="border-t border-[var(--line)] px-5 py-3 text-[0.8125rem] text-[var(--warn)]">
-            Há buscas paradas na fila há mais de 3 minutos. Confira se o serviço está no ar e se as variáveis DATABASE_URL e REDIS_URL estão configuradas.
-          </p>
-        )}
+      <Card className="mt-6" title="Buscas recentes" description="O andamento aparece aqui em tempo real. Pode atualizar a página: nada se perde." flush>
+        <DiscoveryRuns initial={runViews} initialWorkerOk={workerOk} />
       </Card>
 
       <h2 className="mt-10 mb-1 text-[0.9375rem] font-semibold">Outras formas de adicionar empresas</h2>

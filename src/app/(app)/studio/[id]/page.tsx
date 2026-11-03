@@ -59,6 +59,13 @@ export default async function StudioPage({ params, searchParams }: { params: Pro
               </div>
               <Field label="Título principal"><input className="field" name="heroTitle" defaultValue={c.heroTitle} /></Field>
               <Field label="Subtítulo"><textarea className="field min-h-16" name="heroSubtitle" defaultValue={c.heroSubtitle} /></Field>
+              <Field label="Foto de capa" optional hint="Link https de uma foto do próprio negócio (com autorização do dono). Sem foto, o site usa uma ilustração do nicho."><input className="field" name="coverImage" type="url" placeholder="https://…" defaultValue={c.coverImage ?? ""} /></Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Título da seção de serviços" optional><input className="field" name="servicesTitle" defaultValue={c.sections?.servicesTitle ?? ""} /></Field>
+                <Field label="Título dos destaques" optional><input className="field" name="highlightsTitle" defaultValue={c.sections?.highlightsTitle ?? ""} /></Field>
+              </div>
+              <Field label="Chamada final" optional hint="Título e texto do bloco colorido antes do contato."><input className="field" name="ctaTitle" defaultValue={c.sections?.ctaTitle ?? ""} /></Field>
+              <Field label="Texto da chamada final" optional><input className="field" name="ctaText" defaultValue={c.sections?.ctaText ?? ""} /></Field>
               <Field label="Sobre a empresa"><textarea className="field min-h-24" name="about" defaultValue={c.about} /></Field>
               <Field label="Serviços" hint="Um por linha. Para descrever, use uma barra: Corte | Inclui lavagem"><textarea className="field min-h-24 " name="services" defaultValue={pairs(c.services, (x) => `${x.name}${x.description ? ` | ${x.description}` : ""}`)} /></Field>
               <Field label="Destaques" hint="Um por linha, no formato: Título | descrição"><textarea className="field min-h-20 " name="highlights" defaultValue={pairs(c.highlights, (x) => `${x.title} | ${x.description}`)} /></Field>

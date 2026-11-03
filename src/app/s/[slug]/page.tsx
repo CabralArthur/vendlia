@@ -1,3 +1,4 @@
+import "@/sites/fonts.css";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { SiteRender, jsonLd } from "@/sites/render";

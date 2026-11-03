@@ -14,7 +14,9 @@ const schema = z.object({
   EVOLUTION_API_KEY: z.string().optional(),
 
   // LLM (optional — falls back to deterministic rules)
-  LLM_PROVIDER: z.enum(["anthropic", "openai", "none"]).default("none"),
+  // Optional. When empty, the provider is picked from whichever key is set (OpenRouter > Anthropic > OpenAI).
+  LLM_PROVIDER: z.enum(["openrouter", "anthropic", "openai", "none", ""]).default(""),
+  OPENROUTER_API_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   LLM_MODEL: z.string().optional(),

@@ -25,9 +25,17 @@ export async function startDiscovery(fd: FormData) {
       .object({ source: z.enum(["osm", "google_places"]), city: z.string().min(2), state: z.string().length(2), segment: z.enum(segIds), limit: z.coerce.number().min(10).max(1000).default(300) })
       .parse({ source: str(fd, "source"), city: str(fd, "city"), state: str(fd, "state").toUpperCase(), segment: str(fd, "segment"), limit: str(fd, "limit") || undefined });
     if (p.source === "google_places" && !env().GOOGLE_PLACES_API_KEY) throw new Error("Configure GOOGLE_PLACES_API_KEY para usar o Google Places.");
-    const [run] = await db.insert(discoveryRuns).values({ orgId: s.orgId, source: p.source, params: { city: p.city, state: p.state, segment: p.segment, limit: p.limit } }).returning();
+    const [run] = await db
+      .insert(discoveryRuns)
+      .values({
+        orgId: s.orgId,
+        source: p.source,
+        params: { city: p.city, state: p.state, segment: p.segment, limit: p.limit },
+        logs: [{ t: new Date().toISOString(), msg: "Na fila. A busca começa em instantes.", level: "info" }],
+      })
+      .returning();
     await enqueue(QUEUES.discovery, "run", { runId: run!.id }, { jobId: `disc-${run!.id}`, attempts: 2 });
-    return "Busca iniciada. Você será avisado quando terminar.";
+    return "Busca iniciada. Acompanhe o andamento abaixo.";
   });
 }
 
@@ -186,8 +194,18 @@ export async function bulkAction(fd: FormData) {
       return `${ok} contatos enfileirados — envio gradual em horário comercial.${why}`;
     }
     if (op === "discard") {
-      for (const l of owned) await setStage(s.orgId, l.id, "lost", s.userId);
-      return `${owned.length} leads descartados.`;
+      for (const l of owned) {
+        await db.update(leads).set({ lostReason: "Descartado pelo operador" }).where(eq(leads.id, l.id));
+        await setStage(s.orgId, l.id, "lost", s.userId);
+      }
+      return `${owned.length} ${owned.length === 1 ? "lead descartado" : "leads descartados"}. Eles ficam em Etapa → Descartados.`;
+    }
+    if (op === "restore") {
+      for (const l of owned) {
+        await db.update(leads).set({ lostReason: null }).where(eq(leads.id, l.id));
+        await setStage(s.orgId, l.id, "qualified", s.userId);
+      }
+      return `${owned.length} ${owned.length === 1 ? "lead voltou" : "leads voltaram"} para a lista.`;
     }
     throw new Error("Operação inválida");
   });
@@ -217,5 +235,17 @@ export async function setContactPermission(fd: FormData) {
     await audit(s.orgId, s.userId, "contact.permission", cp.id, { permission });
     await logLeadEvent(s.orgId, leadId, "consent", `Permissão de contato: ${permission}`, null, s.userId);
     return "Permissão atualizada.";
+  });
+}
+
+export async function discardLead(fd: FormData) {
+  const s = await requireSession();
+  const leadId = str(fd, "leadId");
+  return act("/leads", async () => {
+    const [l] = await db.select().from(leads).where(and(eq(leads.id, leadId), eq(leads.orgId, s.orgId)));
+    if (!l) throw new Error("Lead não encontrado");
+    await db.update(leads).set({ lostReason: "Descartado pelo operador" }).where(eq(leads.id, leadId));
+    await setStage(s.orgId, leadId, "lost", s.userId, l.stage);
+    return "Lead descartado. Ele fica em Etapa → Descartados, se precisar recuperar.";
   });
 }

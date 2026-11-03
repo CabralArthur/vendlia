@@ -27,6 +27,9 @@ export type Candidate = {
   active?: boolean;
 };
 
+export type LogFn = (msg: string, level?: "info" | "ok" | "warn" | "error") => void | Promise<void>;
+const noop: LogFn = () => {};
+
 export type DiscoveryParams = { city: string; state: string; segment: SegmentId; limit?: number };
 
 /* ----------------------------- OpenStreetMap ----------------------------- */
@@ -135,16 +138,24 @@ const OVERPASS_MIRRORS = ["https://overpass-api.de/api/interpreter", "https://ov
 export const OSM_UNAVAILABLE = "O OpenStreetMap está sobrecarregado agora. Tente de novo em alguns minutos.";
 
 /** Queries Overpass, falling back across public mirrors when one is busy (429/5xx/timeouts). */
-export async function fetchOsm(p: DiscoveryParams, fetchImpl: typeof fetch = fetch, opts: { retryDelayMs?: number } = {}): Promise<Candidate[]> {
+export async function fetchOsm(p: DiscoveryParams, fetchImpl: typeof fetch = fetch, opts: { retryDelayMs?: number; log?: LogFn } = {}): Promise<Candidate[]> {
+  const log = opts.log ?? noop;
+  await log(`Localizando ${p.city}/${p.state.toUpperCase()} no mapa…`);
   const areaId = await resolveCityArea(p, fetchImpl);
+  await log(areaId ? "Cidade encontrada. Buscando empresas só dentro dela." : "Não achei a cidade exata; buscando pelo nome do município.", areaId ? "ok" : "warn");
   const body = "data=" + encodeURIComponent(buildOverpassQuery(p, areaId ?? undefined));
   const mirrors = [...new Set([env().OVERPASS_URL, ...OVERPASS_MIRRORS])];
   // Two rounds across all mirrors, with a pause in between: public servers are often busy for a few seconds.
   const attempts = [...mirrors, ...mirrors];
   const errors: string[] = [];
   for (let n = 0; n < attempts.length; n++) {
-    if (n === mirrors.length) await new Promise((r) => setTimeout(r, opts.retryDelayMs ?? 8_000));
+    if (n === mirrors.length) {
+      await log("Todos os servidores estão ocupados. Nova tentativa em alguns segundos…", "warn");
+      await new Promise((r) => setTimeout(r, opts.retryDelayMs ?? 8_000));
+    }
     const url = attempts[n]!;
+    const host = new URL(url).host;
+    await log(`Consultando o servidor ${host}…`);
     try {
       const res = await fetchImpl(url, {
         method: "POST",
@@ -153,17 +164,23 @@ export async function fetchOsm(p: DiscoveryParams, fetchImpl: typeof fetch = fet
         signal: AbortSignal.timeout(75_000),
       });
       if (!res.ok) {
-        errors.push(`${new URL(url).host}: HTTP ${res.status}`);
+        errors.push(`${host}: HTTP ${res.status}`);
+        await log(`${host} respondeu com erro (HTTP ${res.status}). Tentando outro servidor…`, "warn");
         continue;
       }
       const json = (await res.json()) as { elements?: OsmElement[]; remark?: string };
       if (json.remark && /runtime error|timed out|out of memory/i.test(json.remark) && !json.elements?.length) {
-        errors.push(`${new URL(url).host}: ${json.remark.slice(0, 120)}`);
+        errors.push(`${host}: ${json.remark.slice(0, 120)}`);
+        await log(`${host} não conseguiu concluir a consulta. Tentando outro servidor…`, "warn");
         continue;
       }
-      return mapOsmElements(json.elements ?? [], p);
+      const found = mapOsmElements(json.elements ?? [], p);
+      await log(`${found.length} ${found.length === 1 ? "empresa recebida" : "empresas recebidas"} do OpenStreetMap.`, "ok");
+      return found;
     } catch (e) {
-      errors.push(`${new URL(url).host}: ${e instanceof Error ? e.message : String(e)}`.slice(0, 160));
+      const m = e instanceof Error ? e.message : String(e);
+      errors.push(`${host}: ${m}`.slice(0, 160));
+      await log(/abort|timeout/i.test(m) ? `${host} demorou demais para responder. Tentando outro servidor…` : `Falha ao falar com ${host}. Tentando outro servidor…`, "warn");
     }
   }
   console.error("[discovery] OpenStreetMap falhou", { city: p.city, state: p.state, areaId, errors });
@@ -217,14 +234,17 @@ export function mapGooglePlaces(places: unknown[], p: DiscoveryParams): Candidat
   return out;
 }
 
-export async function fetchGooglePlaces(p: DiscoveryParams, fetchImpl: typeof fetch = fetch): Promise<Candidate[]> {
+export async function fetchGooglePlaces(p: DiscoveryParams, fetchImpl: typeof fetch = fetch, log: LogFn = noop): Promise<Candidate[]> {
   const key = env().GOOGLE_PLACES_API_KEY;
   if (!key) throw new Error("GOOGLE_PLACES_API_KEY não configurada");
   const seg = segmentById(p.segment);
   const all: unknown[] = [];
   let pageToken: string | undefined;
   const max = Math.min(p.limit ?? 60, 60);
+  let page = 0;
   do {
+    page++;
+    await log(`Consultando o Google Maps (página ${page})…`);
     const res = await fetchImpl("https://places.googleapis.com/v1/places:searchText", {
       method: "POST",
       headers: {
@@ -242,9 +262,20 @@ export async function fetchGooglePlaces(p: DiscoveryParams, fetchImpl: typeof fe
       }),
       signal: AbortSignal.timeout(30_000),
     });
-    if (!res.ok) throw new Error(`Google Places respondeu ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    if (!res.ok) {
+      const detail = (await res.text()).slice(0, 300);
+      console.error("[discovery] Google Places", res.status, detail);
+      throw new Error(
+        res.status === 403 || res.status === 401
+          ? "O Google recusou a chave. Confira se a Places API (New) está ativada e se a chave tem permissão para ela."
+          : res.status === 429
+            ? "Limite de uso do Google atingido. Tente de novo mais tarde."
+            : `O Google Maps respondeu com erro (${res.status}). Tente de novo em alguns minutos.`,
+      );
+    }
     const json = (await res.json()) as { places?: unknown[]; nextPageToken?: string };
     all.push(...(json.places ?? []));
+    await log(`${json.places?.length ?? 0} empresas recebidas na página ${page}.`, "ok");
     pageToken = json.nextPageToken;
   } while (pageToken && all.length < max);
   return mapGooglePlaces(all.slice(0, max), p);

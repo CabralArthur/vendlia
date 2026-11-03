@@ -42,6 +42,14 @@ export async function saveSiteAction(fd: FormData) {
         instagram: str(fd, "instagram").replace(/^@/, "") || undefined,
         email: str(fd, "email") || undefined,
       },
+      coverImage: /^https:\/\/\S+$/.test(str(fd, "coverImage")) ? str(fd, "coverImage") : undefined,
+      sections: {
+        ...w.content.sections,
+        servicesTitle: str(fd, "servicesTitle") || undefined,
+        highlightsTitle: str(fd, "highlightsTitle") || undefined,
+        ctaTitle: str(fd, "ctaTitle") || undefined,
+        ctaText: str(fd, "ctaText") || undefined,
+      },
       seo: { title: str(fd, "seoTitle") || w.content.seo.title, description: str(fd, "seoDescription") || w.content.seo.description },
       pendingReview: lines(str(fd, "pendingReview")),
     };

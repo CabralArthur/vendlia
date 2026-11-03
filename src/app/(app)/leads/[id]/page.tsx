@@ -11,10 +11,10 @@ import { outreachEligibility } from "@/server/scoring";
 import { getOrgSettings } from "@/server/org";
 import { previewUrl } from "@/server/whatsapp/service";
 import { formatBrPhone } from "@/lib/phone";
-import { addNote, generatePreview, sendOutreach, setContactPermission, setLeadStageAction, updateBusiness } from "../../_actions/leads";
+import { addNote, discardLead, generatePreview, sendOutreach, setContactPermission, setLeadStageAction, updateBusiness } from "../../_actions/leads";
 import { followUpNow } from "../../_actions/sites";
 import { nextStep } from "@/lib/labels";
-import { ExternalLink, Send, PenLine, RefreshCw } from "lucide-react";
+import { ExternalLink, Send, PenLine, RefreshCw, Trash2 } from "lucide-react";
 
 const TEMPLATE_LABEL: Record<string, string> = { barber: "Barbearia / Salão", aesthetics: "Estética / Clínica", food: "Restaurante / Café", auto: "Oficina", services: "Serviços" };
 
@@ -69,6 +69,13 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
           </span>
         }
         actions={
+          <div className="flex flex-wrap items-center gap-2">
+          {!["lost", "do_not_contact"].includes(lead.stage) && (
+            <form action={discardLead}>
+              <input type="hidden" name="leadId" value={lead.id} />
+              <Submit className="btn btn-quiet" confirm="Descartar este lead? Ele sai da lista e não volta em novas buscas."><Trash2 size={15} /> Descartar</Submit>
+            </form>
+          )}
           <form action={setLeadStageAction} className="flex items-center gap-2">
             <input type="hidden" name="leadId" value={lead.id} />
             <select name="stage" className="field w-48" defaultValue={lead.stage} aria-label="Etapa do lead">
@@ -76,6 +83,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
             </select>
             <Submit className="btn btn-secondary">Alterar etapa</Submit>
           </form>
+          </div>
         }
       />
       <Flash sp={sp} />

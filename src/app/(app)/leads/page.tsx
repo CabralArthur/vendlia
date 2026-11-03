@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { and, desc, eq, gte, ilike, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { requireSession } from "@/server/auth";
 import { db, leads, businesses, LEAD_STAGES, type LeadStage } from "@/server/db";
 import { Card, Empty, PageHeader, ScorePill, StageBadge, STAGE_LABEL, Badge } from "@/components/ui";
 import { SelectAll } from "@/components/select-all";
 import { nextStep } from "@/lib/labels";
-import { Search, Radar, Sparkles, Send, X } from "lucide-react";
+import { Search, Radar, Sparkles, Send, X, Trash2, RotateCcw } from "lucide-react";
 import { Flash } from "@/components/flash";
 import { Submit } from "@/components/submit";
 import { SEGMENTS, segmentById } from "@/server/discovery/segments";
@@ -30,7 +30,10 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const page = Math.max(1, Number(sp.page ?? 1));
   const per = 50;
   const where: SQL[] = [eq(leads.orgId, s.orgId)];
-  if (sp.stage && (LEAD_STAGES as readonly string[]).includes(sp.stage)) where.push(eq(leads.stage, sp.stage as LeadStage));
+  if (sp.stage === "discarded") where.push(inArray(leads.stage, ["lost", "do_not_contact"]));
+  else if (sp.stage && (LEAD_STAGES as readonly string[]).includes(sp.stage)) where.push(eq(leads.stage, sp.stage as LeadStage));
+  // Discarded leads (lost / do-not-contact) stay out of the working list unless asked for.
+  else where.push(notInArray(leads.stage, ["lost", "do_not_contact"]));
   if (sp.segment) where.push(eq(businesses.segment, sp.segment));
   if (sp.city) where.push(ilike(businesses.city, `%${sp.city}%`));
   if (sp.min) where.push(gte(leads.score, Number(sp.min)));
@@ -70,8 +73,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           <input className="field pl-9" name="q" placeholder="Nome, telefone ou bairro" defaultValue={sp.q} aria-label="Buscar" />
         </div>
         <select className="field" name="stage" defaultValue={sp.stage ?? ""} aria-label="Etapa">
-          <option value="">Todas as etapas</option>
-          {LEAD_STAGES.map((st) => <option key={st} value={st}>{STAGE_LABEL[st]}</option>)}
+          <option value="">Em andamento</option>
+          {LEAD_STAGES.filter((st) => st !== "lost" && st !== "do_not_contact").map((st) => <option key={st} value={st}>{STAGE_LABEL[st]}</option>)}
+          <option value="discarded">Descartados</option>
         </select>
         <select className="field" name="segment" defaultValue={sp.segment ?? ""} aria-label="Tipo de negócio">
           <option value="">Todos os tipos</option>
@@ -101,11 +105,19 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           <Card flush className="overflow-hidden">
             <div className="flex flex-wrap items-center gap-2 border-b border-[var(--line)] px-4 py-2.5">
               <span className="muted mr-1 text-[0.8125rem]">Com os selecionados:</span>
-              <Submit name="op" value="preview" className="btn btn-secondary btn-sm" pendingText="Gerando…"><Sparkles size={14} /> Gerar sites</Submit>
-              <Submit name="op" value="outreach" className="btn btn-primary btn-sm" confirm="Enviar o primeiro contato no WhatsApp para os selecionados que podem receber?">
-                <Send size={14} /> Enviar 1º contato
-              </Submit>
-              <Submit name="op" value="discard" className="btn btn-quiet btn-sm ml-auto" confirm="Marcar os selecionados como perdidos?">Descartar</Submit>
+              {sp.stage === "discarded" ? (
+                <Submit name="op" value="restore" className="btn btn-secondary btn-sm" pendingText="Restaurando…"><RotateCcw size={14} /> Voltar para a lista</Submit>
+              ) : (
+                <>
+                  <Submit name="op" value="preview" className="btn btn-secondary btn-sm" pendingText="Gerando…"><Sparkles size={14} /> Gerar sites</Submit>
+                  <Submit name="op" value="outreach" className="btn btn-primary btn-sm" confirm="Enviar o primeiro contato no WhatsApp para os selecionados que podem receber?">
+                    <Send size={14} /> Enviar 1º contato
+                  </Submit>
+                  <Submit name="op" value="discard" className="btn btn-quiet btn-sm ml-auto" pendingText="Descartando…" confirm="Descartar os selecionados? Eles saem da lista e não voltam em novas buscas.">
+                    <Trash2 size={14} /> Descartar
+                  </Submit>
+                </>
+              )}
             </div>
             <div className="scroll-thin overflow-x-auto">
               <table className="table min-w-[880px]">

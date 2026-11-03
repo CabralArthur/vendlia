@@ -21,11 +21,31 @@ function priceFor(model: string): [number, number] {
   return k ? PRICES_PER_MTOK[k]! : [3, 15];
 }
 
-export function llmConfigured() {
+export type Provider = "openrouter" | "anthropic" | "openai";
+
+/** Resolves which LLM provider to use (explicit LLM_PROVIDER wins; otherwise the first key found). */
+export function llmProvider(): Provider | null {
   const e = env();
-  if (e.LLM_PROVIDER === "anthropic") return !!e.ANTHROPIC_API_KEY;
-  if (e.LLM_PROVIDER === "openai") return !!e.OPENAI_API_KEY && !!e.LLM_MODEL;
-  return false;
+  if (e.LLM_PROVIDER === "none") return null;
+  if (e.LLM_PROVIDER === "openrouter") return e.OPENROUTER_API_KEY ? "openrouter" : null;
+  if (e.LLM_PROVIDER === "anthropic") return e.ANTHROPIC_API_KEY ? "anthropic" : null;
+  if (e.LLM_PROVIDER === "openai") return e.OPENAI_API_KEY && e.LLM_MODEL ? "openai" : null;
+  if (e.OPENROUTER_API_KEY) return "openrouter";
+  if (e.ANTHROPIC_API_KEY) return "anthropic";
+  if (e.OPENAI_API_KEY && e.LLM_MODEL) return "openai";
+  return null;
+}
+
+export function llmConfigured() {
+  return llmProvider() !== null;
+}
+
+export function llmModel(provider = llmProvider()) {
+  const e = env();
+  if (e.LLM_MODEL) return e.LLM_MODEL;
+  if (provider === "openrouter") return "anthropic/claude-haiku-5.5";
+  if (provider === "anthropic") return "claude-haiku-5-5";
+  return "";
 }
 
 async function monthSpendUsd(orgId: string) {
@@ -70,8 +90,10 @@ export async function llmJson<T>(
     let model = "";
     let inputTokens = 0;
     let outputTokens = 0;
-    if (e.LLM_PROVIDER === "anthropic") {
-      model = e.LLM_MODEL ?? "claude-haiku-5-5";
+    let costMicrosFromProvider: number | null = null;
+    const provider = llmProvider()!;
+    model = llmModel(provider);
+    if (provider === "anthropic") {
       const res = await fetchImpl("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -85,7 +107,7 @@ export async function llmJson<T>(
           system: opts.system,
           messages: [{ role: "user", content: opts.user }],
         }),
-        signal: AbortSignal.timeout(45_000),
+        signal: AbortSignal.timeout(60_000),
       });
       if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 300)}`);
       const j = (await res.json()) as { content: { type: string; text?: string }[]; usage?: { input_tokens: number; output_tokens: number } };
@@ -93,29 +115,40 @@ export async function llmJson<T>(
       inputTokens = j.usage?.input_tokens ?? 0;
       outputTokens = j.usage?.output_tokens ?? 0;
     } else {
-      model = e.LLM_MODEL!;
-      const res = await fetchImpl("https://api.openai.com/v1/chat/completions", {
+      // OpenAI and OpenRouter share the chat-completions format.
+      const isOR = provider === "openrouter";
+      const res = await fetchImpl(isOR ? "https://openrouter.ai/api/v1/chat/completions" : "https://api.openai.com/v1/chat/completions", {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${e.OPENAI_API_KEY}` },
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${isOR ? e.OPENROUTER_API_KEY : e.OPENAI_API_KEY}`,
+          ...(isOR ? { "X-Title": "Vendlia" } : {}),
+        },
         body: JSON.stringify({
           model,
           max_tokens: opts.maxTokens ?? 1200,
-          response_format: { type: "json_object" },
+          ...(isOR ? { usage: { include: true } } : { response_format: { type: "json_object" } }),
           messages: [
             { role: "system", content: opts.system },
             { role: "user", content: opts.user },
           ],
         }),
-        signal: AbortSignal.timeout(45_000),
+        signal: AbortSignal.timeout(60_000),
       });
-      if (!res.ok) throw new Error(`OpenAI ${res.status}: ${(await res.text()).slice(0, 300)}`);
-      const j = (await res.json()) as { choices: { message: { content: string } }[]; usage?: { prompt_tokens: number; completion_tokens: number } };
-      text = j.choices[0]?.message.content ?? "";
+      if (!res.ok) throw new Error(`${isOR ? "OpenRouter" : "OpenAI"} ${res.status}: ${(await res.text()).slice(0, 300)}`);
+      const j = (await res.json()) as {
+        choices?: { message: { content: string } }[];
+        usage?: { prompt_tokens: number; completion_tokens: number; cost?: number };
+        error?: { message?: string };
+      };
+      if (j.error) throw new Error(`${isOR ? "OpenRouter" : "OpenAI"}: ${j.error.message ?? "erro"}`);
+      text = j.choices?.[0]?.message.content ?? "";
       inputTokens = j.usage?.prompt_tokens ?? 0;
       outputTokens = j.usage?.completion_tokens ?? 0;
+      if (typeof j.usage?.cost === "number") costMicrosFromProvider = Math.round(j.usage.cost * 1_000_000);
     }
     const [pi, po] = priceFor(model);
-    const costMicros = Math.round(inputTokens * pi + outputTokens * po);
+    const costMicros = costMicrosFromProvider ?? Math.round(inputTokens * pi + outputTokens * po);
     await db.insert(usageRecords).values({ orgId, kind, model, inputTokens, outputTokens, costMicros });
     const parsed = opts.schema.safeParse(extractJson(text));
     if (!parsed.success) {

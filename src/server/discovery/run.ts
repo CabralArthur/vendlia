@@ -1,19 +1,41 @@
 import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
-import { db, discoveryRuns, contactPoints, leads, businesses, businessSources, whatsappInstances } from "../db";
-import { fetchGooglePlaces, fetchOsm, type DiscoveryParams } from "./connectors";
+import { db, discoveryRuns, contactPoints, leads, businesses, businessSources, whatsappInstances, type RunLog } from "../db";
+import { fetchGooglePlaces, fetchOsm, type DiscoveryParams, type LogFn } from "./connectors";
+import { segmentById } from "./segments";
 import { ingestCandidates, rescoreLead } from "./ingest";
 import { notify } from "../events";
 import { EvolutionClient } from "../whatsapp/evolution";
 import { env } from "../env";
 
-export async function runDiscovery(runId: string, fetchImpl?: typeof fetch) {
+/** Appends one line to the run's progress log (read by the Prospecção screen via polling). */
+export function runLogger(runId: string): LogFn {
+  return async (msg, level = "info") => {
+    const entry: RunLog = { t: new Date().toISOString(), msg, level };
+    await db
+      .update(discoveryRuns)
+      .set({ logs: sql`${discoveryRuns.logs} || ${JSON.stringify([entry])}::jsonb` })
+      .where(eq(discoveryRuns.id, runId))
+      .catch((e) => console.warn("[discovery] log falhou", e?.message));
+  };
+}
+
+export async function runDiscovery(runId: string, fetchImpl?: typeof fetch, opts: { retryDelayMs?: number } = {}) {
   const [run] = await db.select().from(discoveryRuns).where(eq(discoveryRuns.id, runId));
   if (!run || run.status === "done") return;
+  const log = runLogger(runId);
   await db.update(discoveryRuns).set({ status: "running" }).where(eq(discoveryRuns.id, runId));
+  const params = run.params as DiscoveryParams;
+  const label = `${segmentById(params.segment).label} em ${params.city}/${params.state}`;
+  await log(`Busca iniciada: ${label} (${run.source === "google_places" ? "Google Maps" : "OpenStreetMap"}).`);
   try {
-    const params = run.params as DiscoveryParams;
-    const candidates = run.source === "google_places" ? await fetchGooglePlaces(params, fetchImpl) : await fetchOsm(params, fetchImpl);
+    const candidates =
+      run.source === "google_places"
+        ? await fetchGooglePlaces(params, fetchImpl, log)
+        : await fetchOsm(params, fetchImpl, { log, retryDelayMs: opts.retryDelayMs });
+    const withPhone = candidates.filter((c) => c.phone).length;
+    await log(`Salvando ${candidates.length} empresas (${withPhone} com telefone) e calculando a nota de cada uma…`);
     const res = await ingestCandidates(run.orgId, candidates);
+    await log(`${res.created} ${res.created === 1 ? "empresa nova" : "empresas novas"}, ${res.updated} já estavam na sua lista.`, "ok");
     await db
       .update(discoveryRuns)
       .set({ status: "done", found: candidates.length, created: res.created, finishedAt: new Date() })
@@ -21,13 +43,19 @@ export async function runDiscovery(runId: string, fetchImpl?: typeof fetch) {
     await notify(run.orgId, {
       type: "discovery_done",
       title: "Busca concluída",
-      body: `${candidates.length} empresas encontradas, ${res.created} novas (${params.segment} · ${params.city}/${params.state}).`,
+      body: `${label}: ${candidates.length} empresas encontradas, ${res.created} novas.`,
       link: "/leads",
     });
-    await verifyWhatsappNumbers(run.orgId).catch((e) => console.warn("[discovery] verificação de WhatsApp falhou", e?.message));
+    const checked = await verifyWhatsappNumbers(run.orgId).catch((e) => {
+      console.warn("[discovery] verificação de WhatsApp falhou", e?.message);
+      return 0;
+    });
+    if (checked) await log(`WhatsApp verificado em ${checked} números.`, "ok");
+    await log("Concluída. As empresas já estão em Leads.", "ok");
     return res;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    await log(msg, "error");
     await db.update(discoveryRuns).set({ status: "failed", error: msg.slice(0, 500), finishedAt: new Date() }).where(eq(discoveryRuns.id, runId));
     await notify(run.orgId, { type: "discovery_failed", title: "Busca falhou", body: msg.slice(0, 200), link: "/discovery" });
     throw err;
