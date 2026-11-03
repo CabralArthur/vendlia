@@ -60,6 +60,7 @@ export default async function StudioPage({ params, searchParams }: { params: Pro
               <Field label="Título principal"><input className="field" name="heroTitle" defaultValue={c.heroTitle} /></Field>
               <Field label="Subtítulo"><textarea className="field min-h-16" name="heroSubtitle" defaultValue={c.heroSubtitle} /></Field>
               <Field label="Foto de capa" optional hint="Link https de uma foto do próprio negócio (com autorização do dono). Sem foto, o site usa uma ilustração do nicho."><input className="field" name="coverImage" type="url" placeholder="https://…" defaultValue={c.coverImage ?? ""} /></Field>
+              <Field label="Mais fotos" optional hint="Uma por linha (links https). Aparecem numa galeria depois dos serviços."><textarea className="field min-h-16" name="gallery" defaultValue={(c.gallery ?? []).join("\n")} /></Field>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Título da seção de serviços" optional><input className="field" name="servicesTitle" defaultValue={c.sections?.servicesTitle ?? ""} /></Field>
                 <Field label="Título dos destaques" optional><input className="field" name="highlightsTitle" defaultValue={c.sections?.highlightsTitle ?? ""} /></Field>

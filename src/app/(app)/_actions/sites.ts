@@ -43,6 +43,7 @@ export async function saveSiteAction(fd: FormData) {
         email: str(fd, "email") || undefined,
       },
       coverImage: /^https:\/\/\S+$/.test(str(fd, "coverImage")) ? str(fd, "coverImage") : undefined,
+      gallery: lines(str(fd, "gallery")).filter((u) => /^https:\/\/\S+$/.test(u)).slice(0, 8),
       sections: {
         ...w.content.sections,
         servicesTitle: str(fd, "servicesTitle") || undefined,

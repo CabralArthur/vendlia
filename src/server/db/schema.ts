@@ -250,6 +250,8 @@ export type SiteContent = {
   sections?: { servicesTitle?: string; servicesIntro?: string; highlightsTitle?: string; ctaTitle?: string; ctaText?: string };
   /** Optional cover photo URL supplied by the operator (must be licensed or provided by the client). */
   coverImage?: string;
+  /** Optional extra photos (https URLs) supplied by the operator. */
+  gallery?: string[];
 };
 
 export const websites = pgTable(

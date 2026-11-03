@@ -22,24 +22,73 @@ export type BusinessFacts = {
   lng?: number | null;
 };
 
-const HERO: Record<string, (b: BusinessFacts, place: string) => [string, string, string]> = {
-  barber: (b, p) => [`Seu estilo começa na ${b.name}`, `Agende seu horário${p ? ` em ${p}` : ""} direto pelo WhatsApp, sem complicação.`, "Agendar pelo WhatsApp"],
-  aesthetics: (b, p) => [`Cuidado e bem-estar na ${b.name}`, `Conheça nossos serviços${p ? ` em ${p}` : ""} e agende sua avaliação pelo WhatsApp.`, "Agendar avaliação"],
-  food: (b, p) => [`${b.name}`, `Sabor${p ? ` em ${p}` : ""} para o seu dia. Fale com a gente e faça seu pedido.`, "Fazer pedido"],
-  auto: (b, p) => [`${b.name}: seu carro em boas mãos`, `Peça seu orçamento${p ? ` em ${p}` : ""} pelo WhatsApp e agende o atendimento.`, "Pedir orçamento"],
-  services: (b, p) => [`${b.name}`, `Atendimento${p ? ` em ${p}` : ""} com agilidade. Fale com a gente pelo WhatsApp.`, "Falar no WhatsApp"],
+type Copy0 = { noun: string; sub: (p: string) => string; about: (n: string, p: string) => string; cta: string; desc?: Record<string, string> };
+const em = (p: string) => (p ? ` em ${p}` : "");
+/** Plain, specific copy per segment. Never claims anything we don't know (years, quality, awards). */
+const RULE_COPY: Record<string, Copy0> = {
+  barbearia: {
+    noun: "Barbearia", cta: "Marcar horário",
+    sub: (p) => `Corte, barba e acabamento${em(p)}. Escolha o dia e marque pelo WhatsApp.`,
+    about: (n, p) => `${n} é uma barbearia${em(p)}. Mande uma mensagem pelo WhatsApp, escolha o serviço e o horário que fica melhor para você.`,
+    desc: { "Corte de cabelo": "Corte na máquina, na tesoura ou dos dois jeitos.", Barba: "Barba feita e alinhada.", "Corte + barba": "Os dois no mesmo horário." },
+  },
+  salao: {
+    noun: "Salão de beleza", cta: "Agendar horário",
+    sub: (p) => `Cabelo e beleza${em(p)}. Agende seu horário pelo WhatsApp.`,
+    about: (n, p) => `${n} é um salão de beleza${em(p)}. Tire suas dúvidas e agende pelo WhatsApp.`,
+  },
+  estetica: {
+    noun: "Estética", cta: "Agendar avaliação",
+    sub: (p) => `Tratamentos de estética${em(p)}. Tire suas dúvidas e agende pelo WhatsApp.`,
+    about: (n, p) => `${n}: estética${em(p)}. Converse com a gente pelo WhatsApp para entender cada tratamento e marcar sua avaliação.`,
+  },
+  clinica: {
+    noun: "Clínica", cta: "Agendar consulta",
+    sub: (p) => `Atendimento${em(p)}. Agende sua consulta pelo WhatsApp.`,
+    about: (n, p) => `${n}${em(p)}. Fale com a gente pelo WhatsApp para saber horários e agendar.`,
+  },
+  restaurante: {
+    noun: "Restaurante", cta: "Fazer pedido",
+    sub: (p) => `Restaurante${em(p)}. Veja o cardápio e faça seu pedido pelo WhatsApp.`,
+    about: (n, p) => `${n} fica${em(p)}. Venha comer com a gente ou mande seu pedido pelo WhatsApp.`,
+    desc: { Almoço: "Pratos para o almoço do dia a dia.", Delivery: "Peça pelo WhatsApp e receba onde estiver." },
+  },
+  cafeteria: {
+    noun: "Cafeteria", cta: "Fazer pedido",
+    sub: (p) => `Café e lanches${em(p)}. Peça pelo WhatsApp.`,
+    about: (n, p) => `${n}${em(p)}. Passe para um café ou mande seu pedido pelo WhatsApp.`,
+  },
+  oficina: {
+    noun: "Oficina mecânica", cta: "Pedir orçamento",
+    sub: (p) => `Manutenção e reparo do seu carro${em(p)}. Peça seu orçamento pelo WhatsApp.`,
+    about: (n, p) => `${n} é uma oficina mecânica${em(p)}. Mande o modelo do carro e o que está acontecendo pelo WhatsApp para receber um orçamento.`,
+  },
+  petshop: {
+    noun: "Pet shop", cta: "Agendar",
+    sub: (p) => `Cuidado para o seu pet${em(p)}. Agende pelo WhatsApp.`,
+    about: (n, p) => `${n}${em(p)}. Fale com a gente pelo WhatsApp para agendar e tirar dúvidas.`,
+  },
+  servicos: {
+    noun: "Serviços", cta: "Pedir orçamento",
+    sub: (p) => `Atendimento${em(p)}. Conte o que você precisa e receba um orçamento pelo WhatsApp.`,
+    about: (n, p) => `${n}${em(p)}. Mande uma mensagem pelo WhatsApp explicando o que você precisa.`,
+  },
 };
 
 /** Deterministic content built ONLY from verified facts. Unverified items are listed in pendingReview. */
 export function buildRuleContent(b: BusinessFacts): SiteContent {
   const seg = segmentById(b.segment);
   const place = [b.neighborhood, b.city].filter(Boolean).join(", ");
-  const [heroTitle, heroSubtitle, ctaLabel] = (HERO[seg.template] ?? HERO.services!)(b, place);
+  const rc = RULE_COPY[seg.id] ?? RULE_COPY.servicos!;
+  const where = b.neighborhood ?? b.city ?? "";
+  const heroTitle = where ? `${rc.noun} em ${where}` : rc.noun;
+  const heroSubtitle = rc.sub(place);
+  const ctaLabel = rc.cta;
   const pendingReview: string[] = [];
 
   let services = b.services.map((s) => ({ name: s, description: "" }));
   if (services.length === 0) {
-    services = seg.defaultServices.map((s) => ({ name: s, description: "" }));
+    services = seg.defaultServices.map((s) => ({ name: s, description: rc.desc?.[s] ?? "" }));
     pendingReview.push(`Serviços sugeridos para ${seg.label.toLowerCase()} — confirmar com o cliente`);
   }
 
@@ -59,13 +108,11 @@ export function buildRuleContent(b: BusinessFacts): SiteContent {
   if (!b.address) pendingReview.push("Endereço");
   if (!b.description) pendingReview.push("Texto de apresentação — confirmar com o cliente");
 
-  const about =
-    b.description ??
-    `A ${b.name} atende${place ? ` em ${place}` : ""} na área de ${(b.category ?? seg.label).toLowerCase()}. Entre em contato para saber mais sobre os serviços.`;
+  const about = b.description ?? rc.about(b.name, place);
 
   return {
     businessName: b.name,
-    tagline: seg.label,
+    tagline: rc.noun,
     heroTitle,
     heroSubtitle,
     about,
@@ -152,7 +199,9 @@ export async function generateSiteContent(orgId: string, b: BusinessFacts, fetch
         "- Use SOMENTE os fatos fornecidos. Não invente tempo de mercado, prêmios, certificações, avaliações, depoimentos, números, preços, promoções, descontos, garantias, horários, equipe, marcas ou serviços.",
         "- Em services, devolva exatamente os serviços da lista, na mesma ordem, cada um com uma descrição curta do que é o serviço (genérica, sem preço nem duração).",
         "- Destaques falam de como é ser atendido (ex.: agendar pelo WhatsApp, localização), nunca de conquistas.",
-        "- Nada de clichês como 'excelência', 'qualidade incomparável', 'o melhor da região'. Nada de emojis.",
+        "- Escreva como o dono do negócio falaria com um vizinho: simples, concreto, sem frase de efeito. Nada que soe como texto de IA ou de agência.",
+        "- Proibido: 'excelência', 'qualidade', 'experiência única', 'descubra', 'mais que um', 'do seu jeito', 'sem complicação', 'bateu a fome', 'no capricho', 'transforme', 'eleve', perguntas retóricas, exclamações, emojis, trios de adjetivos.",
+        "- tagline: só a categoria, 1 a 3 palavras (ex.: 'Restaurante', 'Barbearia'). heroTitle: até 7 palavras, vira o título da seção Sobre, sem repetir o nome do negócio. heroSubtitle: 1 frase dizendo o que é, onde fica e como pedir. about: 2 frases no máximo.",
         'Responda SOMENTE com JSON válido: {"tagline","heroTitle","heroSubtitle","ctaLabel","about","servicesTitle","servicesIntro","services":[{"name","description"}],"highlightsTitle","highlights":[{"title","description"}],"ctaTitle","ctaText","seoDescription"}',
       ].join("\n"),
       user: `<fatos>\n${JSON.stringify({ nome: b.name, segmento: seg.label, categoria: b.category, bairro: b.neighborhood, cidade: b.city, uf: b.state, endereco: b.address, horario: b.openingHours, instagram: b.instagram, descricao: b.description, servicos: serviceNames, whatsapp: b.phoneE164 ? "sim" : "não" })}\n</fatos>`,
