@@ -5,6 +5,7 @@ import { QUEUES, queue, enqueue } from "../server/queue";
 import { db, messages } from "../server/db";
 import { runDiscovery, purgeExpiredSourceData } from "../server/discovery/run";
 import { generateLogoForSite, generateSiteForLead } from "../server/sites/service";
+import { expireTrials } from "../server/billing";
 import { processProviderEvent, queueDueFollowUps, sendQueuedMessage, syncInstances } from "../server/whatsapp/service";
 
 const log = (msg: string, extra?: unknown) =>
@@ -62,6 +63,8 @@ export async function startWorkers(where: "worker" | "web") {
         for (const m of stuck) await enqueue(QUEUES.outbound, "send", { messageId: m.id }, { jobId: `msg-${m.id}` });
         return { requeued: stuck.length };
       }
+      case "expire-trials":
+        return expireTrials();
       case "heartbeat":
         await redis().set("vendlia:worker:heartbeat", Date.now().toString(), "EX", 180);
         return;
@@ -80,6 +83,7 @@ async function schedule() {
   await q.upsertJobScheduler("followups", { pattern: "15 * * * *" }, { name: "followups", opts });
   await q.upsertJobScheduler("sync-instances", { every: 5 * 60_000 }, { name: "sync-instances", opts });
   await q.upsertJobScheduler("requeue-stuck", { every: 10 * 60_000 }, { name: "requeue-stuck", opts });
+  await q.upsertJobScheduler("expire-trials", { every: 60 * 60_000 }, { name: "expire-trials", opts });
   await q.removeJobScheduler("billing").catch(() => {}); // removed feature (older deploys)
   await q.upsertJobScheduler("purge-sources", { pattern: "30 6 * * *" }, { name: "purge-sources", opts });
   await redis().set("vendlia:worker:heartbeat", Date.now().toString(), "EX", 180);

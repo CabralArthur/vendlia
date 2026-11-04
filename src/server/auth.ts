@@ -1,3 +1,5 @@
+import { TRIAL_DAYS } from "@/lib/plans";
+import { env } from "./env";
 import "server-only";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -109,11 +111,21 @@ export async function registerOwner(input: { name: string; email: string; passwo
   if (existing.length) throw new Error("Este e-mail já está cadastrado.");
   const passwordHash = await hashPassword(input.password);
   return db.transaction(async (tx) => {
-    const [u] = await tx.insert(users).values({ email, name: input.name.trim(), passwordHash }).returning();
+    const [u] = await tx.insert(users).values({ email, name: input.name.trim(), passwordHash, termsAcceptedAt: new Date() }).returning();
+    const owner = env()
+      .OWNER_EMAILS.split(",")
+      .map((x) => x.trim().toLowerCase())
+      .includes(email);
     const slugBase = input.orgName.toLowerCase().normalize("NFD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     const [o] = await tx
       .insert(organizations)
-      .values({ name: input.orgName.trim(), slug: `${slugBase || "org"}-${randomToken(3).toLowerCase()}`, settings: defaultOrgSettings() })
+      .values({
+        name: input.orgName.trim(),
+        slug: `${slugBase || "org"}-${randomToken(3).toLowerCase()}`,
+        settings: defaultOrgSettings(),
+        trialEndsAt: new Date(Date.now() + TRIAL_DAYS * 86_400_000),
+        ...(owner ? { unlimited: true, plan: "agencia" as const, billingStatus: "active" as const } : {}),
+      })
       .returning();
     await tx.insert(memberships).values({ userId: u!.id, orgId: o!.id, role: "owner" });
     return { userId: u!.id, orgId: o!.id };

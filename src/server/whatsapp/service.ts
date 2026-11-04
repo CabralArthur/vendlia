@@ -22,6 +22,7 @@ import { redis } from "../redis";
 import { publish } from "../realtime";
 import { advanceStage, logLeadEvent, notify, setStage } from "../events";
 import { getOrgSettings } from "../org";
+import { assertCanSend } from "../billing";
 import { outreachEligibility } from "../scoring";
 import { classifyMessage } from "../ai/classify";
 import { transition, automationMaySpeak } from "../handoff";
@@ -104,6 +105,26 @@ async function isSuppressed(orgId: string, phoneE164: string) {
 
 export type QueueResult = { ok: true; messageId: string } | { ok: false; reason: string };
 
+/** The first-contact text for a lead, as it would be sent (used by "Copiar mensagem"). */
+export async function outreachText(orgId: string, leadId: string, actorName?: string) {
+  const [row] = await db
+    .select({ business: businesses })
+    .from(leads)
+    .innerJoin(businesses, eq(businesses.id, leads.businessId))
+    .where(and(eq(leads.id, leadId), eq(leads.orgId, orgId)));
+  if (!row) return null;
+  const [site] = await db.select().from(websites).where(eq(websites.leadId, leadId)).orderBy(desc(websites.createdAt)).limit(1);
+  if (!site) return null;
+  const settings = await getOrgSettings(orgId);
+  return renderTemplate(settings.outreachTemplate, {
+    saudacao: greeting(new Date()),
+    empresa: row.business.name,
+    cidade: row.business.city ?? "sua cidade",
+    link: previewUrl(site),
+    operador: actorName?.split(" ")[0] ?? "a equipe",
+  });
+}
+
 /** Queues the first contact (or the single follow-up) for a lead, enforcing eligibility rules. */
 export async function queueOutreach(orgId: string, leadId: string, actorId: string | null, kind: "outreach" | "followup" = "outreach"): Promise<QueueResult> {
   const [row] = await db
@@ -114,6 +135,11 @@ export async function queueOutreach(orgId: string, leadId: string, actorId: stri
   if (!row) return { ok: false, reason: "Lead não encontrado" };
   const { lead, business } = row;
   if (business.isDemo) return { ok: false, reason: "Lead de exemplo — não envia mensagens" };
+  try {
+    await assertCanSend(orgId);
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : "Plano sem envio automático" };
+  }
   const [site] = await db.select().from(websites).where(eq(websites.leadId, leadId)).orderBy(desc(websites.createdAt)).limit(1);
   const [cp] = await db
     .select()

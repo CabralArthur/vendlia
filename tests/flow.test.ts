@@ -68,10 +68,10 @@ beforeAll(async () => {
   await resetDb();
   const [u] = await db.insert(users).values({ email: "op@vendlia.test", name: "Rafael Operador", passwordHash: "x" }).returning();
   userId = u!.id;
-  const [o] = await db.insert(organizations).values({ name: "Vendlia", slug: "vendlia", settings: defaultOrgSettings() }).returning();
+  const [o] = await db.insert(organizations).values({ name: "Vendlia", slug: "vendlia", settings: defaultOrgSettings(), unlimited: true }).returning();
   orgId = o!.id;
   await db.insert(memberships).values({ userId, orgId, role: "owner" });
-  const [o2] = await db.insert(organizations).values({ name: "Outra", slug: "outra", settings: defaultOrgSettings() }).returning();
+  const [o2] = await db.insert(organizations).values({ name: "Outra", slug: "outra", settings: defaultOrgSettings(), unlimited: true }).returning();
   otherOrgId = o2!.id;
   instanceToken = "tok-" + "a".repeat(30);
   await db.insert(whatsappInstances).values({ orgId, name: "vendlia-main", label: "Principal", status: "open", webhookToken: instanceToken, warmupStartedAt: new Date("2026-01-01") });

@@ -39,7 +39,7 @@ beforeAll(async () => {
   process.env.OPENROUTER_API_KEY = "or-test";
   process.env.LLM_PROVIDER = "";
   resetEnvCache();
-  const [o] = await db.insert(organizations).values({ name: "IA", slug: "ia", settings: defaultOrgSettings() }).returning();
+  const [o] = await db.insert(organizations).values({ name: "IA", slug: "ia", settings: defaultOrgSettings(), unlimited: true }).returning();
   orgId = o!.id;
 });
 afterAll(() => {

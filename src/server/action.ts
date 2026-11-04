@@ -13,17 +13,18 @@ export async function act(back: string, fn: () => Promise<string | void>): Promi
     console.error("[action]", back, msg);
     redirect(withParam(back, "err", msg.slice(0, 300)));
   }
-  revalidatePath(back.split("?")[0]!);
+  revalidatePath(back.split(/[?#]/)[0]!);
   redirect(ok ? withParam(back, "ok", ok) : back);
 }
 
 function withParam(url: string, k: string, v: string) {
-  const [p, q] = url.split("?");
+  const [base, hash] = url.split("#");
+  const [p, q] = base!.split("?");
   const sp = new URLSearchParams(q);
   sp.delete("ok");
   sp.delete("err");
   sp.set(k, v);
-  return `${p}?${sp.toString()}`;
+  return `${p}?${sp.toString()}${hash ? `#${hash}` : ""}`;
 }
 
 export function str(fd: FormData, k: string) {

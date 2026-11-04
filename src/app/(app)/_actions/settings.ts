@@ -12,6 +12,7 @@ import { randomToken } from "@/lib/text";
 import { normalizeBrPhone } from "@/lib/phone";
 import { audit } from "@/server/events";
 import { llmProvider, llmSiteModel, llmText } from "@/server/ai/llm";
+import { assertCanAddNumber } from "@/server/billing";
 
 export async function saveOrgSettings(fd: FormData) {
   const s = await requireRole("owner", "admin");
@@ -49,6 +50,7 @@ function webhookUrl() {
 export async function createInstanceAction(fd: FormData) {
   const s = await requireRole("owner", "admin");
   return act("/settings", async () => {
+    await assertCanAddNumber(s.orgId);
     const label = str(fd, "label") || "WhatsApp";
     const name = `vendlia-${s.org.slug.slice(0, 20)}-${randomToken(4).toLowerCase().replace(/[^a-z0-9]/g, "x")}`;
     const token = randomToken(24);

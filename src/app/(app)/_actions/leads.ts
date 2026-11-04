@@ -12,6 +12,7 @@ import { setStage, logLeadEvent, audit } from "@/server/events";
 import { setSiteGen } from "@/server/sites/progress";
 import { llmConfigured } from "@/server/ai/llm";
 import { suggestSearches } from "@/server/ai/prospect";
+import { assertQuota, consumeQuota, quotaStatus } from "@/server/billing";
 import { queueOutreach } from "@/server/whatsapp/service";
 import { normalizeBrPhone } from "@/lib/phone";
 import { normalizeName, onlyDigits } from "@/lib/text";
@@ -27,6 +28,7 @@ export async function startDiscovery(fd: FormData) {
       .object({ source: z.enum(["osm", "google_places"]), city: z.string().min(2), state: z.string().length(2), segment: z.enum(segIds), neighborhood: z.string().max(80).optional(), limit: z.coerce.number().min(5).max(MAX_LIMIT).default(DEFAULT_LIMIT) })
       .parse({ source: str(fd, "source"), city: str(fd, "city"), state: str(fd, "state").toUpperCase(), segment: str(fd, "segment"), neighborhood: str(fd, "neighborhood") || undefined, limit: str(fd, "limit") || undefined });
     if (p.source === "google_places" && !env().GOOGLE_PLACES_API_KEY) throw new Error("Configure GOOGLE_PLACES_API_KEY para usar o Google Places.");
+    await assertQuota(s.orgId, "search");
     const [run] = await db
       .insert(discoveryRuns)
       .values({
@@ -36,6 +38,7 @@ export async function startDiscovery(fd: FormData) {
         logs: [{ t: new Date().toISOString(), msg: "Na fila. A busca começa em instantes.", level: "info" }],
       })
       .returning();
+    await consumeQuota(s.orgId, "search");
     await enqueue(QUEUES.discovery, "run", { runId: run!.id }, { jobId: `disc-${run!.id}`, attempts: 2 });
     return "Busca iniciada. Acompanhe o andamento abaixo.";
   });
@@ -166,6 +169,7 @@ export async function generatePreview(fd: FormData) {
     if (!l) throw new Error("Lead não encontrado");
     const choice = str(fd, "template");
     const mode = !choice || choice === "ai" ? "ai" : "template";
+    if (mode === "ai" && llmConfigured()) await assertQuota(s.orgId, "site");
     const template = mode === "template" ? choice : undefined;
     await setSiteGen(leadId, { status: "queued", step: "", mode: mode === "ai" && llmConfigured() ? "ai" : "template", startedAt: Date.now() });
     await enqueue(QUEUES.sites, "generate", { orgId: s.orgId, leadId, mode, template }, { jobId: `site-${leadId}-${Date.now()}`, attempts: 1 });
@@ -186,6 +190,14 @@ export async function bulkAction(fd: FormData) {
     const owned = await db.select({ id: leads.id }).from(leads).where(and(eq(leads.orgId, s.orgId), inArray(leads.id, list)));
     const op = str(fd, "op");
     if (op === "preview") {
+      if (llmConfigured()) {
+        const q = await quotaStatus(s.orgId);
+        if (!q.unlimited) {
+          if (!q.access.ok) throw new Error(q.access.reason);
+          const left = q.limit.site + q.extraSites - q.used.site;
+          if (owned.length > left) throw new Error(left > 0 ? `Seu plano ainda tem ${left} ${left === 1 ? "site com IA" : "sites com IA"} este mês. Selecione até ${left} empresas.` : "Você já usou os sites com IA do seu plano este mês. Gere com o modelo pronto (na página do lead), compre um pacote ou mude de plano.");
+        }
+      }
       for (const l of owned) {
         await setSiteGen(l.id, { status: "queued", step: "", mode: llmConfigured() ? "ai" : "template", startedAt: Date.now() });
         await enqueue(QUEUES.sites, "generate", { orgId: s.orgId, leadId: l.id, mode: "ai" }, { jobId: `site-${l.id}-${Date.now()}`, attempts: 1 });
@@ -265,11 +277,27 @@ export async function suggestSearchesAction(fd: FormData) {
   const s = await requireSession();
   return act("/discovery#sugestoes", async () => {
     if (!llmConfigured()) throw new Error("Configure a OPENROUTER_API_KEY no Railway para usar as sugestões da IA.");
+    const q = await quotaStatus(s.orgId);
+    if (!q.access.ok) throw new Error(q.access.reason);
     const city = str(fd, "city");
     const state = str(fd, "state").toUpperCase();
     if (city.length < 2 || state.length !== 2) throw new Error("Informe a cidade e a UF.");
     const r = await suggestSearches(s.orgId, { city, state, focus: str(fd, "focus").slice(0, 300) || undefined });
     if (!r.data) throw new Error(`Não consegui gerar sugestões: ${r.error}`);
     return `${r.data.items.length} sugestões prontas.`;
+  });
+}
+
+/** The operator sent the first contact from their own phone: record it and move the lead forward. */
+export async function markContacted(fd: FormData) {
+  const s = await requireSession();
+  const leadId = str(fd, "leadId");
+  return act(`/leads/${leadId}`, async () => {
+    const [l] = await db.select({ id: leads.id }).from(leads).where(and(eq(leads.id, leadId), eq(leads.orgId, s.orgId)));
+    if (!l) throw new Error("Lead não encontrado");
+    await db.update(leads).set({ lastContactAt: new Date() }).where(eq(leads.id, leadId));
+    await logLeadEvent(s.orgId, leadId, "sent", "Primeiro contato enviado pelo celular do operador", null, s.userId);
+    await setStage(s.orgId, leadId, "contacted", s.userId);
+    return "Marcado como contatado.";
   });
 }

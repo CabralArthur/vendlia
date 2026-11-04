@@ -11,6 +11,7 @@ import { audit } from "@/server/events";
 import { enqueue, QUEUES } from "@/server/queue";
 import { setSiteGen } from "@/server/sites/progress";
 import { llmConfigured } from "@/server/ai/llm";
+import { assertQuota, buySitePack, cancelSubscription, startCheckout } from "@/server/billing";
 
 
 const lines = (v: string) => v.split("\n").map((x) => x.trim()).filter(Boolean);
@@ -125,6 +126,7 @@ export async function aiSiteAction(fd: FormData) {
     if (!w) throw new Error("Site não encontrado");
     const instructions = str(fd, "instructions").slice(0, 1200);
     const fresh = str(fd, "op") === "fresh";
+    await assertQuota(s.orgId, "site");
     const cover = str(fd, "coverImage");
     const gallery = lines(str(fd, "gallery")).filter((u) => /^https:\/\/\S+$/.test(u)).slice(0, 8);
     const coverImage = /^https:\/\/\S+$/.test(cover) ? cover : undefined;
@@ -158,6 +160,7 @@ export async function requestLogoAction(fd: FormData) {
     if (!llmConfigured()) throw new Error("Configure a OPENROUTER_API_KEY no Railway para usar a IA.");
     const [w] = await db.select().from(websites).where(and(eq(websites.id, siteId), eq(websites.orgId, s.orgId)));
     if (!w) throw new Error("Site não encontrado");
+    await assertQuota(s.orgId, "logo");
     await setSiteGen(w.leadId, { status: "queued", step: "", mode: "ai", startedAt: Date.now() });
     await enqueue(QUEUES.sites, "logo", { orgId: s.orgId, siteId }, { jobId: `logo-${siteId}-${Date.now()}`, attempts: 1 });
     return "A IA está desenhando 3 propostas de logo (cerca de 1 minuto).";

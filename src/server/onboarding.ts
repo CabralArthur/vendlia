@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, like, not, sql } from "drizzle-orm";
-import { db, businesses, conversations, leads, messages, websites, whatsappInstances } from "./db";
+import { db, organizations, businesses, conversations, leads, messages, websites, whatsappInstances } from "./db";
 import { env } from "./env";
 import { isDemoInstance, DEMO_INSTANCE_PREFIX } from "@/lib/demo";
 
@@ -48,6 +48,9 @@ export async function getSetupProgress(orgId: string): Promise<{ steps: SetupSte
       .where(and(eq(websites.orgId, orgId), eq(websites.status, "published"), eq(businesses.isDemo, false))),
   ]);
   const waOpen = inst.some((i) => i.status === "open" && !isDemoInstance(i.name));
+  const [org] = await db.select({ plan: organizations.plan, unlimited: organizations.unlimited }).from(organizations).where(eq(organizations.id, orgId));
+  const trial = !!org && org.plan === "trial" && !org.unlimited;
+  const [contacted] = await db.select({ n: sql<number>`count(*)::int` }).from(leads).where(and(eq(leads.orgId, orgId), sql`${leads.lastContactAt} is not null`));
 
   const steps: SetupStep[] = [
     {
@@ -73,15 +76,18 @@ export async function getSetupProgress(orgId: string): Promise<{ steps: SetupSte
       href: "/settings#whatsapp",
       cta: "Conectar",
       done: waOpen,
-      blockedBy: evoReady ? undefined : "Falta subir a Evolution API no Railway e preencher EVOLUTION_API_URL / EVOLUTION_API_KEY.",
+      optional: trial,
+      blockedBy: trial ? "Disponível nos planos pagos. No teste, mande do seu celular pelo botão “Abrir no WhatsApp” na página do lead." : evoReady ? undefined : "Falta subir a Evolution API no Railway e preencher EVOLUTION_API_URL / EVOLUTION_API_KEY.",
     },
     {
       id: "contact",
       title: "Enviar o primeiro contato",
-      why: "Selecione leads com demonstração e clique em “Enviar 1º contato”. O envio respeita horário comercial e limites do número.",
+      why: trial
+        ? "Abra um lead com demonstração, toque em “Abrir no WhatsApp” para mandar do seu celular e marque como enviado."
+        : "Selecione leads com demonstração e clique em “Enviar 1º contato”. O envio respeita horário comercial e limites do número.",
       href: "/leads?stage=preview_ready",
       cta: "Ver leads prontos",
-      done: (sent?.n ?? 0) > 0,
+      done: (sent?.n ?? 0) > 0 || (contacted?.n ?? 0) > 0,
     },
     {
       id: "publish",

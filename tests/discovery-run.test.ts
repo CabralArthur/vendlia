@@ -22,7 +22,7 @@ async function newRun() {
 
 beforeAll(async () => {
   await resetDb();
-  const [o] = await db.insert(organizations).values({ name: "Live", slug: "live", settings: defaultOrgSettings() }).returning();
+  const [o] = await db.insert(organizations).values({ name: "Live", slug: "live", settings: defaultOrgSettings(), unlimited: true }).returning();
   orgId = o!.id;
 });
 

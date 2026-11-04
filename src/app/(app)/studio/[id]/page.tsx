@@ -13,6 +13,7 @@ import { env } from "@/server/env";
 import { aiSiteAction, requestLogoAction, saveLogoAction, publishAction, rollbackAction, saveSiteAction, setDomainAction, unpublishAction, useTemplateAction } from "../../_actions/sites";
 import { getSiteGen } from "@/server/sites/progress";
 import { llmConfigured } from "@/server/ai/llm";
+import { isOwnerEmail } from "@/server/billing";
 import { SiteGenStatus } from "@/components/site-gen-status";
 import { fontHrefs } from "@/sites/font-pairings";
 import { ExternalLink, Sparkles, PenTool } from "lucide-react";
@@ -45,6 +46,8 @@ export default async function StudioPage({ params, searchParams }: { params: Pro
   const pairs = <T,>(arr: T[], f: (x: T) => string) => arr.map(f).join("\n");
   const e = env();
   const [gen, aiOn] = [await getSiteGen(w.leadId), llmConfigured()];
+  const owner = isOwnerEmail(s.user.email);
+  const appHost = new URL(e.APP_URL).host;
   const unpublishedChanges = w.status === "published" && w.publishedVersion !== w.version;
 
   return (
@@ -221,8 +224,14 @@ export default async function StudioPage({ params, searchParams }: { params: Pro
               <Submit className="btn btn-secondary">Salvar</Submit>
             </form>
             <div className="muted mt-3 space-y-1 text-xs">
-              <p>1. No Railway, serviço <b>web</b> → Settings → Networking → <b>Custom Domain</b> → adicione o domínio.</p>
-              <p>2. No DNS do cliente, crie o registro CNAME indicado pelo Railway (o HTTPS é emitido automaticamente).</p>
+              {owner ? (
+                <>
+                  <p>1. No Railway, serviço <b>web</b> → Settings → Networking → <b>Custom Domain</b> → adicione o domínio.</p>
+                  <p>2. No DNS do cliente, crie o registro CNAME indicado pelo Railway (o HTTPS é emitido automaticamente).</p>
+                </>
+              ) : (
+                <p>Depois de salvar, crie no DNS do domínio um registro CNAME apontando para <b>{appHost}</b> e fale com o suporte para ativarmos o HTTPS.</p>
+              )}
               {e.SITES_BASE_DOMAIN && <p>Endereço gratuito já disponível: <b>{w.slug}.{e.SITES_BASE_DOMAIN}</b></p>}
             </div>
           </Card>

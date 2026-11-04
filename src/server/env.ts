@@ -21,6 +21,16 @@ const schema = z.object({
 
   // LLM (optional — falls back to deterministic rules)
   // Optional. When empty, the provider is picked from whichever key is set (OpenRouter > Anthropic > OpenAI).
+  // Billing (Asaas): sandbox by default; webhook authenticated by a token set in the Asaas panel.
+  ASAAS_API_KEY: apiKey,
+  ASAAS_ENV: z.enum(["sandbox", "production"]).default("sandbox"),
+  ASAAS_WEBHOOK_TOKEN: z.string().optional(),
+  /** Comma-separated e-mails of the platform owners (admin panel, unlimited use). */
+  OWNER_EMAILS: z.string().default(""),
+  /** Shown in the terms, privacy policy and footer. */
+  LEGAL_NAME: z.string().default("Vendlia"),
+  LEGAL_DOC: z.string().default(""),
+  SUPPORT_EMAIL: z.string().default(""),
   LLM_PROVIDER: z.enum(["openrouter", "anthropic", "openai", "none", ""]).default(""),
   OPENROUTER_API_KEY: apiKey,
   ANTHROPIC_API_KEY: apiKey,

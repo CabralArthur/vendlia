@@ -113,7 +113,7 @@ describe("AI design: generation flow", () => {
     process.env.OPENROUTER_API_KEY = "or-test";
     process.env.LLM_PROVIDER = "";
     resetEnvCache();
-    const [o] = await db.insert(organizations).values({ name: "IA", slug: "ia-design", settings: defaultOrgSettings() }).returning();
+    const [o] = await db.insert(organizations).values({ name: "IA", slug: "ia-design", settings: defaultOrgSettings(), unlimited: true }).returning();
     orgId = o!.id;
     const [b] = await db.insert(businesses).values({ orgId, ...facts, normalizedName: "mariazinha", lat: -8.03, lng: -34.9 }).returning();
     const [l] = await db.insert(leads).values({ orgId, businessId: b!.id }).returning();

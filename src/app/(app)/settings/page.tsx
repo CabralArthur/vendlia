@@ -8,6 +8,7 @@ import { Submit } from "@/components/submit";
 import { getOrgSettings } from "@/server/org";
 import { env } from "@/server/env";
 import { llmConfigured, llmProvider, llmSiteModel, monthSpendUsd } from "@/server/ai/llm";
+import { isOwnerEmail } from "@/server/billing";
 import { effectiveDailyLimit } from "@/server/whatsapp/limits";
 import { isDemoInstance } from "@/lib/demo";
 import { formatBrPhone } from "@/lib/phone";
@@ -63,6 +64,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const admin = s.role !== "operator";
   const ai = llmConfigured();
   const aiSpent = ai ? await monthSpendUsd(s.orgId) : 0;
+  const owner = isOwnerEmail(s.user.email);
 
   return (
     <>
@@ -243,7 +245,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           </form>
         </Section>
 
-        <Section id="integracoes" title="Integrações" description="Configuradas pelas variáveis do Railway. O que estiver desligado é opcional, exceto o WhatsApp.">
+        {owner && <Section id="integracoes" title="Integrações" description="Configuradas pelas variáveis do Railway. O que estiver desligado é opcional, exceto o WhatsApp.">
           <ul className="divide-y divide-[var(--line)] rounded-[var(--radius-lg)] border border-[var(--line)] px-4">
             <Status ok={evoReady} label="WhatsApp (Evolution API)" detail="Envio do primeiro contato e respostas no Inbox." />
             <Status ok={!!e.GOOGLE_PLACES_API_KEY} label="Google Maps" detail="Busca de empresas com mais telefones. Sem ela, usa o OpenStreetMap." />
@@ -254,7 +256,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <Submit className="btn btn-secondary" pendingText="Testando a IA… (até 1 min)">Testar IA</Submit>
             <span className="muted text-[0.8125rem]">Faz uma chamada curta ao modelo que cria os sites e mostra o resultado.</span>
           </form>
-        </Section>
+        </Section>}
       </div>
     </>
   );

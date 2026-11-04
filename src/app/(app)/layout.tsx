@@ -8,6 +8,8 @@ import { LogoMark } from "@/components/ui";
 import { logoutAction } from "../(auth)/actions";
 import { isDemoInstance } from "@/lib/demo";
 import { LogOut } from "lucide-react";
+import { access, getOrg, isOwnerEmail, trialEnd, usage } from "@/server/billing";
+import { PLANS, type PlanId } from "@/lib/plans";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const s = await requireSession();
@@ -16,6 +18,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     db.select({ status: whatsappInstances.status, name: whatsappInstances.name }).from(whatsappInstances).where(eq(whatsappInstances.orgId, s.orgId)),
   ]);
   const real = inst.filter((i) => !isDemoInstance(i.name));
+  const org = await getOrg(s.orgId);
+  const acc = access(org);
+  const owner = isOwnerEmail(s.user.email);
+  let banner: { tone: "trial" | "block" | "pending"; text: string } | null = null;
+  if (!org.unlimited) {
+    if (!acc.ok) banner = { tone: org.billingStatus === "pending" ? "pending" : "block", text: acc.reason ?? "Escolha um plano para continuar." };
+    else if (org.plan === "trial") {
+      const days = Math.max(0, Math.ceil((trialEnd(org).getTime() - Date.now()) / 86_400_000));
+      const u = await usage(org);
+      const pl = PLANS[org.plan as PlanId];
+      banner = { tone: "trial", text: `Teste grátis: ${days === 0 ? "termina hoje" : `${days} ${days === 1 ? "dia" : "dias"} restantes`} · ${u.site} de ${pl.sites} site com IA · ${u.search} de ${pl.searches} buscas` };
+    } else if (org.billingStatus === "past_due") banner = { tone: "block", text: "Seu pagamento está em atraso. Regularize para não perder o acesso." };
+  }
   const waOnline = real.some((i) => i.status === "open");
   const initials = s.user.name.split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 
@@ -28,7 +43,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             vendlia<span className="text-mint">.</span>
           </span>
         </Link>
-        <Nav badges={{ inbox: inbox?.n ?? 0 }} />
+        <Nav badges={{ inbox: inbox?.n ?? 0 }} owner={owner} />
         <div className="hidden px-3 pt-4 lg:block">
           <Link href="/settings#whatsapp" className="mb-2 flex items-center gap-2 rounded-md px-3 py-2 text-[0.8125rem] text-paper/75 hover:bg-white/[0.05]">
             <span className={`h-2 w-2 rounded-full ${waOnline ? "bg-mint" : "bg-[#f5b546]"}`} aria-hidden />
@@ -49,6 +64,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
       <main className="min-w-0 px-4 py-6 sm:px-8 lg:px-10 lg:py-9">
+        {banner && (
+          <div
+            className={`mx-auto mb-6 flex max-w-[1200px] flex-wrap items-center gap-x-4 gap-y-2 rounded-[var(--radius-lg)] border px-4 py-3 text-[0.875rem] ${
+              banner.tone === "block" ? "border-[#fecdca] bg-[var(--danger-bg)] text-[var(--danger)]" : banner.tone === "pending" ? "border-[#b2ddff] bg-[var(--info-bg)] text-[#1849a9]" : "border-[var(--line)] bg-[var(--surface)]"
+            }`}
+            role="status"
+          >
+            <span className="min-w-0 flex-1 font-medium">{banner.text}</span>
+            <Link href="/planos" className={`btn btn-sm ${banner.tone === "trial" ? "btn-secondary" : "btn-primary"}`}>{banner.tone === "pending" ? "Ver pagamento" : "Escolher plano"}</Link>
+          </div>
+        )}
         <div className="mx-auto max-w-[1200px]">{children}</div>
       </main>
       <Live refreshOn={["message", "conversation", "lead", "instance"]} />

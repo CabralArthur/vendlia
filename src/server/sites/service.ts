@@ -6,6 +6,7 @@ import { designSite } from "../ai/sitedesign";
 import { generateLogos } from "../ai/logo";
 import { llmConfigured } from "../ai/llm";
 import { setSiteGen } from "./progress";
+import { assertQuota, consumeQuota } from "../billing";
 import { randomToken, slugify } from "@/lib/text";
 import { advanceStage, logLeadEvent } from "../events";
 import { publish } from "../realtime";
@@ -40,7 +41,17 @@ export async function generateSiteForLead(
   const facts = { ...b, services: b.services ?? [] };
   const seg = segmentById(b.segment);
   const [prev] = await db.select().from(websites).where(eq(websites.leadId, leadId)).orderBy(desc(websites.createdAt)).limit(1);
-  const wantAi = (opts.mode ?? "ai") === "ai";
+  let wantAi = (opts.mode ?? "ai") === "ai";
+  let quotaNote = "";
+  if (wantAi) {
+    // Re-checked here because jobs can wait in the queue; out of quota → the free ready-made template.
+    try {
+      await assertQuota(orgId, "site");
+    } catch (e) {
+      wantAi = false;
+      quotaNote = e instanceof Error ? e.message : "Limite do plano atingido";
+    }
+  }
   await setSiteGen(leadId, { status: "running", step: wantAi ? "A IA está criando o design e os textos (1 a 4 minutos)…" : "Montando o site…", mode: wantAi ? "ai" : "template", startedAt: Date.now() });
   try {
     const services = facts.services.length ? facts.services : seg.defaultServices;
@@ -75,7 +86,10 @@ export async function generateSiteForLead(
       content.placePhotos = realPhotos.map((p) => ({ url: p.path, author: p.author }));
       content.pendingReview = [...content.pendingReview, "Fotos do Google Maps: confirme com o dono se pode usar no site oficial"];
     }
-    if (ai) content.ai = ai;
+    if (ai) {
+      content.ai = ai;
+      await consumeQuota(orgId, "site");
+    } else if (quotaNote) content.pendingReview = [`Feito com o modelo pronto: ${quotaNote}`, ...content.pendingReview];
     else if (wantAi) content.pendingReview = [`A IA não gerou o design (${design.error ?? "motivo desconhecido"}); foi usado o modelo pronto`, ...content.pendingReview];
     const siteId = await saveGenerated(orgId, leadId, b, content, opts.template ?? seg.template, prev, opts.instructions);
     await setSiteGen(leadId, { status: "done", step: ai ? "Site criado pela IA." : wantAi ? `A IA falhou: ${design.error}` : "Site criado com o modelo pronto." });
@@ -151,6 +165,7 @@ export async function generateLogoForSite(orgId: string, siteId: string, fetchIm
   if (!w) throw new Error("Site não encontrado");
   await setSiteGen(w.leadId, { status: "running", step: "A IA está desenhando 3 propostas de logo…", mode: "ai", startedAt: Date.now() });
   const r = await generateLogos(orgId, w.content, w.template, w.accent, fetchImpl);
+  if (r.logo) await consumeQuota(orgId, "logo");
   if (!r.logo) {
     await setSiteGen(w.leadId, { status: "failed", step: `Logo não gerado: ${r.error}` });
     return null;

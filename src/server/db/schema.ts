@@ -42,6 +42,19 @@ export const organizations = pgTable("organizations", {
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
   settings: jsonb("settings").$type<OrgSettings>().notNull(),
+  /** Subscription: trial → paid plan via Asaas. `unlimited` = the platform owner's own accounts. */
+  plan: text("plan", { enum: ["trial", "inicial", "pro", "agencia"] }).notNull().default("trial"),
+  billingStatus: text("billing_status", { enum: ["trialing", "pending", "active", "past_due", "canceled", "expired"] }).notNull().default("trialing"),
+  billingCycle: text("billing_cycle", { enum: ["monthly", "quarterly", "yearly"] }),
+  trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
+  periodStart: timestamp("period_start", { withTimezone: true }),
+  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  pendingPlan: text("pending_plan"),
+  pendingCycle: text("pending_cycle"),
+  asaasCustomerId: text("asaas_customer_id"),
+  asaasSubscriptionId: text("asaas_subscription_id"),
+  extraSites: integer("extra_sites").notNull().default(0),
+  unlimited: boolean("unlimited").notNull().default(false),
   createdAt: createdAt(),
 });
 
@@ -50,6 +63,7 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   name: text("name").notNull(),
   passwordHash: text("password_hash").notNull(),
+  termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
   createdAt: createdAt(),
 });
 

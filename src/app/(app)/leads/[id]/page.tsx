@@ -11,12 +11,14 @@ import { outreachEligibility } from "@/server/scoring";
 import { getOrgSettings } from "@/server/org";
 import { previewUrl } from "@/server/whatsapp/service";
 import { formatBrPhone } from "@/lib/phone";
-import { addNote, discardLead, generatePreview, sendOutreach, setContactPermission, setLeadStageAction, updateBusiness } from "../../_actions/leads";
+import { addNote, discardLead, markContacted, generatePreview, sendOutreach, setContactPermission, setLeadStageAction, updateBusiness } from "../../_actions/leads";
 import { followUpNow } from "../../_actions/sites";
 import { nextStep } from "@/lib/labels";
 import { getSiteGen } from "@/server/sites/progress";
 import { llmConfigured } from "@/server/ai/llm";
 import { SiteGenStatus } from "@/components/site-gen-status";
+import { CopyMessage } from "@/components/copy-message";
+import { outreachText } from "@/server/whatsapp/service";
 import { ExternalLink, Send, PenLine, RefreshCw, Trash2, Star } from "lucide-react";
 
 const TEMPLATE_LABEL: Record<string, string> = { barber: "Barbearia / Salão", aesthetics: "Estética / Clínica", food: "Restaurante / Café", auto: "Oficina", services: "Serviços" };
@@ -60,6 +62,7 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
   const missing = lead.scoreFactors.filter((f) => f.kind === "missing");
   const siteStatus = site ? SITE_STATUS_LABEL[site.status] ?? [site.status, "neutral"] : null;
   const [gen, ai] = [await getSiteGen(lead.id), llmConfigured()];
+  const copyText = site && b.phoneE164 ? await outreachText(s.orgId, lead.id, s.user.name) : null;
 
   return (
     <>
@@ -201,6 +204,15 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
                   {elig.reasons.map((r) => <li key={r}>{r}</li>)}
                 </ul>
               </div>
+            )}
+            {copyText && !["contacted", "replied", "interested", "proposal_sent", "negotiation", "won", "do_not_contact"].includes(lead.stage) && (
+              <>
+                <CopyMessage text={copyText} phone={b.phoneE164} />
+                <form action={markContacted} className="mt-2">
+                  <input type="hidden" name="leadId" value={lead.id} />
+                  <Submit className="btn btn-quiet btn-sm" pendingText="Salvando…">Já mandei pelo meu celular</Submit>
+                </form>
+              </>
             )}
             {(lead.stage === "contacted" || convs.length > 0) && (
               <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--line)] pt-4">

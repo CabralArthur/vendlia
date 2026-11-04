@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Users, Radar, MessagesSquare, Settings, Compass, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, Users, Radar, MessagesSquare, Settings, Compass, CreditCard, Shield, type LucideIcon } from "lucide-react";
 
 type Item = { href: string; label: string; icon: LucideIcon; badgeKey?: string };
 
@@ -13,8 +13,10 @@ const MAIN: Item[] = [
 ];
 const SECONDARY: Item[] = [
   { href: "/onboarding", label: "Como funciona", icon: Compass },
+  { href: "/planos", label: "Plano", icon: CreditCard },
   { href: "/settings", label: "Configurações", icon: Settings },
 ];
+const OWNER: Item = { href: "/admin", label: "Administração", icon: Shield };
 
 function NavLink({ it, active, badge }: { it: Item; active: boolean; badge: number }) {
   return (
@@ -37,7 +39,7 @@ function NavLink({ it, active, badge }: { it: Item; active: boolean; badge: numb
   );
 }
 
-export function Nav({ badges }: { badges: Record<string, number> }) {
+export function Nav({ badges, owner = false }: { badges: Record<string, number>; owner?: boolean }) {
   const path = usePathname();
   const isActive = (href: string) => path === href || path.startsWith(href + "/") || (href === "/leads" && path.startsWith("/studio"));
   return (
@@ -46,7 +48,7 @@ export function Nav({ badges }: { badges: Record<string, number> }) {
         <NavLink key={it.href} it={it} active={isActive(it.href)} badge={it.badgeKey ? badges[it.badgeKey] ?? 0 : 0} />
       ))}
       <div className="hidden lg:mt-auto lg:block" />
-      {SECONDARY.map((it) => (
+      {[...(owner ? [OWNER] : []), ...SECONDARY].map((it) => (
         <NavLink key={it.href} it={it} active={isActive(it.href)} badge={0} />
       ))}
     </nav>

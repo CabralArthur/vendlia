@@ -28,6 +28,7 @@ const signupSchema = z.object({
   orgName: z.string().min(2, "Informe o nome da empresa"),
   email: z.string().email("E-mail inválido"),
   password: z.string().min(8, "A senha precisa ter ao menos 8 caracteres"),
+  terms: z.literal("on", { message: "Aceite os Termos de uso e a Política de privacidade para continuar" }),
 });
 
 export async function signupAction(fd: FormData) {
@@ -37,7 +38,7 @@ export async function signupAction(fd: FormData) {
   if (!parsed.success) redirect("/signup?err=" + encodeURIComponent(parsed.error.issues[0]!.message));
   let r: { userId: string; orgId: string };
   try {
-    r = await registerOwner(parsed.data);
+    r = await registerOwner({ name: parsed.data.name, orgName: parsed.data.orgName, email: parsed.data.email, password: parsed.data.password });
   } catch (e) {
     redirect("/signup?err=" + encodeURIComponent(e instanceof Error ? e.message : "Erro"));
   }
