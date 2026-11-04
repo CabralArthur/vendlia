@@ -17,7 +17,7 @@ import { nextStep } from "@/lib/labels";
 import { getSiteGen } from "@/server/sites/progress";
 import { llmConfigured } from "@/server/ai/llm";
 import { SiteGenStatus } from "@/components/site-gen-status";
-import { ExternalLink, Send, PenLine, RefreshCw, Trash2 } from "lucide-react";
+import { ExternalLink, Send, PenLine, RefreshCw, Trash2, Star } from "lucide-react";
 
 const TEMPLATE_LABEL: Record<string, string> = { barber: "Barbearia / Salão", aesthetics: "Estética / Clínica", food: "Restaurante / Café", auto: "Oficina", services: "Serviços" };
 
@@ -70,6 +70,12 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
           <span className="inline-flex flex-wrap items-center gap-2">
             <StageBadge stage={lead.stage} />
             <span>{segmentById(b.segment).label}{place ? ` em ${place}` : ""}</span>
+            {b.rating && b.ratingCount ? (
+              <span className="inline-flex items-center gap-1 font-semibold text-[var(--ink)]">
+                <Star size={13} className="fill-[#f5b301] text-[#f5b301]" aria-hidden />
+                {b.rating.toFixed(1).replace(".", ",")} <span className="muted font-normal">({b.ratingCount.toLocaleString("pt-BR")} avaliações no Google)</span>
+              </span>
+            ) : null}
           </span>
         }
         actions={
@@ -94,6 +100,17 @@ export default async function LeadDetail({ params, searchParams }: { params: Pro
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-6">
+          {b.photos.length > 0 && (
+            <div className={`grid gap-2 overflow-hidden rounded-[var(--radius-lg)] ${b.photos.length >= 5 ? "grid-cols-4" : b.photos.length >= 3 ? "grid-cols-3" : "grid-cols-1"}`}>
+              {b.photos.slice(0, b.photos.length >= 5 ? 5 : b.photos.length >= 3 ? 3 : 1).map((ph, i) => (
+                <figure key={ph.name} className={`relative m-0 overflow-hidden bg-[var(--surface-2)] ${b.photos.length < 3 ? "aspect-[21/9]" : i === 0 ? "col-span-2 row-span-2" : "aspect-[4/3]"}`}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={`/api/places/photo?n=${encodeURIComponent(ph.name)}&w=${i === 0 ? 900 : 480}`} alt={`Foto de ${b.name}`} loading="lazy" className="h-full w-full object-cover" />
+                  {ph.author && <figcaption className="absolute right-1.5 bottom-1 max-w-[90%] truncate rounded bg-black/45 px-1.5 text-[0.625rem] text-white/90">{ph.author} · Google</figcaption>}
+                </figure>
+              ))}
+            </div>
+          )}
           <Card
             tour="lead-demo"
             title="Site de demonstração"

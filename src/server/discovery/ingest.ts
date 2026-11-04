@@ -61,6 +61,9 @@ export async function ingestCandidates(orgId: string, candidates: Candidate[]): 
         if (!b.openingHours && c.openingHours) patch.openingHours = c.openingHours;
         if (!b.instagram && web.instagram) patch.instagram = web.instagram;
         if (!b.email && c.email) patch.email = c.email;
+        // Ratings and photos come fresh from Google on each search.
+        if (c.rating !== undefined) Object.assign(patch, { rating: c.rating, ratingCount: c.ratingCount ?? null });
+        if (c.photos?.length) patch.photos = c.photos;
         if (b.websiteStatus !== "confirmed_absent" && web.status === "has_website" && b.websiteStatus !== "has_website") {
           Object.assign(patch, { websiteStatus: "has_website", website: web.website });
         }
@@ -90,6 +93,9 @@ export async function ingestCandidates(orgId: string, candidates: Candidate[]): 
             instagram: web.instagram,
             openingHours: c.openingHours,
             active: c.active ?? true,
+            rating: c.rating,
+            ratingCount: c.ratingCount,
+            photos: c.photos ?? [],
           })
           .returning({ id: businesses.id });
         businessId = b!.id;

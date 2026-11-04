@@ -45,6 +45,7 @@ export async function generateSiteForLead(
   try {
     const services = facts.services.length ? facts.services : seg.defaultServices;
     const photos = [prev?.content.coverImage, ...(prev?.content.gallery ?? [])].filter((x): x is string => !!x);
+    const realPhotos = (b.photos ?? []).slice(0, 6).map((p, i) => ({ slot: `foto-${i + 1}`, path: `/api/places/photo?n=${encodeURIComponent(p.name)}&w=1600`, author: p.author }));
     const [content, design] = await Promise.all([
       generateSiteContent(orgId, facts, opts.fetchImpl),
       wantAi
@@ -55,6 +56,7 @@ export async function generateSiteForLead(
               services,
               servicesAreSuggestions: facts.services.length === 0,
               photos,
+              realPhotos,
               previous: opts.instructions ? prev?.content.ai : undefined,
               instructions: opts.instructions,
               log: (m) => void setSiteGen(leadId, { status: "running", step: m }),
@@ -68,6 +70,10 @@ export async function generateSiteForLead(
     if (prev) {
       content.coverImage = prev.content.coverImage;
       content.gallery = prev.content.gallery;
+    }
+    if (realPhotos.length) {
+      content.placePhotos = realPhotos.map((p) => ({ url: p.path, author: p.author }));
+      content.pendingReview = [...content.pendingReview, "Fotos do Google Maps: confirme com o dono se pode usar no site oficial"];
     }
     if (ai) content.ai = ai;
     else if (wantAi) content.pendingReview = [`A IA não gerou o design (${design.error ?? "motivo desconhecido"}); foi usado o modelo pronto`, ...content.pendingReview];

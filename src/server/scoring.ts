@@ -16,6 +16,8 @@ export type ScoreInput = {
   cnpj?: string | null;
   services?: string[];
   stage?: LeadStage;
+  rating?: number | null;
+  ratingCount?: number | null;
 };
 
 /** Explainable 0–100 commercial opportunity score. Separate from contact eligibility. */
@@ -57,6 +59,13 @@ export function scoreLead(i: ScoreInput): { score: number; factors: ScoreFactor[
   else f.push({ label: "Horário de funcionamento", points: 0, kind: "missing" });
   if (i.instagram) add("Instagram ativo (demanda visual)", 5);
   if (i.cnpj) add("CNPJ identificado", 4);
+  // Well-reviewed businesses already have customers and a reputation to show: best buyers of a site.
+  if (i.rating && i.ratingCount) {
+    const stars = i.rating.toFixed(1).replace(".", ",");
+    if (i.rating >= 4.5 && i.ratingCount >= 30) add(`Bem avaliada no Google (${stars} ★, ${i.ratingCount} avaliações)`, i.ratingCount >= 100 ? 14 : 10);
+    else if (i.rating >= 4 && i.ratingCount >= 10) add(`Boa avaliação no Google (${stars} ★, ${i.ratingCount})`, 6);
+    else if (i.rating < 3.5 && i.ratingCount >= 10) add(`Avaliação baixa no Google (${stars} ★)`, -6);
+  }
   if (i.services && i.services.length > 0) add("Serviços conhecidos", 4);
   else f.push({ label: "Serviços oferecidos", points: 0, kind: "missing" });
 

@@ -39,7 +39,7 @@ Paleta de 3 a 5 cores coerente com o conceito (pode ser escura ou clara), contra
 - Escreva os prompts em inglês, como um diretor de fotografia: assunto, enquadramento, luz, lente, clima, paleta de cor coerente com o site. Estilo fotografia editorial real (35mm, luz natural, grão leve). Contexto brasileiro quando fizer sentido.
 - Nada de texto, letreiros, logotipos, marcas ou nomes nas fotos. Pessoas só de costas, desfocadas ou em detalhe (mãos, gestos). Mostre o tipo de produto/ambiente, nunca algo que pareça ser "o" estabelecimento.
 - A foto é protagonista em pelo menos uma seção: hero em tela cheia, imagem grande sangrando a borda, ou mosaico editorial.` : "(desativadas: não use imagens, só tipografia, cor, CSS e SVG)"}
-Se houver fotos reais em "fotos" nos fatos, use essas URLs diretamente em src e peça menos fotos de IA.
+FOTOS REAIS: se "fotos_reais" vier nos fatos, são fotos do próprio estabelecimento (Google Maps). Elas valem mais que qualquer foto de IA: use-as com destaque (hero, galeria) pelo marcador {{IMG:slot}} de cada uma (ex.: {{IMG:foto-1}}), sem pedir fotos de IA para os mesmos lugares. Não descreva o que aparece nelas além do óbvio. Se houver URLs em "fotos" (fotos enviadas pelo vendedor), use-as diretamente em src.
 
 6. EFEITOS (profissionais e sutis; tudo deve funcionar sem eles)
 O sistema oferece estes ganchos (sem você escrever JavaScript):
@@ -72,10 +72,13 @@ Evite: "excelência", "qualidade", "experiência única", "descubra", "mais que 
 - Até ~1000 linhas no total. Capriche no CSS.`;
 }
 
+/** A real photo of the business (Google Places), already available at `path`. */
+export type RealPhoto = { slot: string; path: string; author?: string };
+
 export type DesignImage = { slot: string; prompt: string; aspect: string };
 export type DesignMeta = { businessType: string; pairing: string; fonts: SiteAi["fonts"]; palette?: string[]; concept?: string; images: DesignImage[] };
 
-function factsPayload(b: BusinessFacts, extra: { whatsapp?: string; servicesAreSuggestions: boolean; services: string[]; photos: string[] }) {
+function factsPayload(b: BusinessFacts, extra: { whatsapp?: string; servicesAreSuggestions: boolean; services: string[]; photos: string[]; realPhotos: RealPhoto[] }) {
   const seg = segmentById(b.segment);
   return {
     nome: b.name,
@@ -94,6 +97,7 @@ function factsPayload(b: BusinessFacts, extra: { whatsapp?: string; servicesAreS
     oferece: extra.services,
     oferece_e_sugestao: extra.servicesAreSuggestions,
     fotos: extra.photos,
+    fotos_reais: extra.realPhotos.map((p) => ({ slot: p.slot })),
     tem_mapa: !!(b.address || (b.lat && b.lng)),
   };
 }
@@ -213,7 +217,7 @@ export function fillPlaceholders(html: string, c: { whatsapp?: string; phone?: s
     .replace(/\{\{EMAIL\}\}/g, c.email ? `mailto:${esc(c.email)}` : "#")
     .replace(/\{\{IMG:([\w-]+)\}\}/g, (_, slot: string) => {
       const u = c.images?.[slot];
-      return u && /^\/api\/assets\/[0-9a-f-]{36}$/.test(u) ? u : blank;
+      return u && (/^\/api\/assets\/[0-9a-f-]{36}$/.test(u) || /^\/api\/places\/photo\?n=[\w%.-]+&w=\d+$/.test(u)) ? esc(u) : blank;
     })
     .replace(/\{\{YEAR\}\}/g, String(new Date().getFullYear()))
     .replace(/\{\{MAP\}\}/g, c.mapEmbed ? `<iframe src="${esc(c.mapEmbed)}" title="Mapa: ${esc(c.name)}" loading="lazy" style="border:0;width:100%;height:100%;min-height:300px;display:block"></iframe>` : "")
@@ -261,14 +265,16 @@ async function makeImages(
 export async function designSite(
   orgId: string,
   b: BusinessFacts,
-  opts: { services: string[]; servicesAreSuggestions: boolean; photos?: string[]; previous?: SiteAi; instructions?: string; log?: (m: string) => void },
+  opts: { services: string[]; servicesAreSuggestions: boolean; photos?: string[]; realPhotos?: RealPhoto[]; previous?: SiteAi; instructions?: string; log?: (m: string) => void },
   // returns { ai } on success or { error } with a human-readable reason
   fetchImpl?: typeof fetch,
 ): Promise<{ ai?: SiteAi; error?: string }> {
   const whatsapp = b.phoneE164 && isBrMobile(b.phoneE164) ? b.phoneE164 : undefined;
-  const facts = factsPayload(b, { whatsapp, services: opts.services, servicesAreSuggestions: opts.servicesAreSuggestions, photos: opts.photos ?? [] });
+  const real = opts.realPhotos ?? [];
+  const facts = factsPayload(b, { whatsapp, services: opts.services, servicesAreSuggestions: opts.servicesAreSuggestions, photos: opts.photos ?? [], realPhotos: real });
   const model = llmSiteModel();
-  const maxImages = imagesAvailable() ? Math.max(0, env().SITE_IMAGES - (opts.photos?.length ?? 0)) : 0;
+  // Real photos replace AI ones: with 3+ real photos the design needs at most one AI image.
+  const maxImages = imagesAvailable() ? Math.max(0, Math.min(env().SITE_IMAGES - (opts.photos?.length ?? 0) - real.length, real.length >= 3 ? 1 : 6)) : 0;
   const system = systemPrompt(maxImages);
   let user = `<fatos>\n${JSON.stringify(facts, null, 1)}\n</fatos>`;
   if (opts.previous && opts.instructions) {
@@ -289,7 +295,9 @@ export async function designSite(
       const problems = checkDesign(clean, b, { whatsapp });
       lastProblem = problems.join("; ");
       if (problems.length === 0) {
-        const images = await makeImages(orgId, clean, meta, maxImages, opts.previous?.images, fetchImpl, opts.log);
+        const seed = { ...opts.previous?.images, ...Object.fromEntries(real.map((p) => [p.slot, p.path])) };
+        const images = await makeImages(orgId, clean, meta, maxImages, seed, fetchImpl, opts.log);
+        const usedReal = real.filter((p) => images.map[p.slot] === p.path);
         return {
           ai: {
             html: clean,
@@ -303,6 +311,7 @@ export async function designSite(
             costMicros: totalCost + images.costMicros,
             generatedAt: new Date().toISOString(),
             instructions: opts.instructions,
+            photoCredits: [...new Set(usedReal.map((p) => p.author).filter((a): a is string => !!a))],
           },
         };
       }

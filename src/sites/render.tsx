@@ -337,6 +337,11 @@ export function AiSiteRender({ content: c, demo, demoNote }: { content: SiteCont
         <p id="vd-demo" role="note"><b>Prévia de demonstração</b> · não é o site oficial{demoNote ? ` · ${demoNote}` : ""}</p>
       )}
       <div className="vai" dangerouslySetInnerHTML={{ __html: withLogo }} />
+      {ai.photoCredits?.length ? (
+        <p style={{ margin: 0, padding: "10px 16px", textAlign: "center", font: "400 11px/1.4 system-ui,sans-serif", color: "#8a8f98", background: "#111316" }}>
+          Fotos: {ai.photoCredits.slice(0, 4).join(", ")} · Google Maps
+        </p>
+      ) : null}
       <SiteMotion root=".vai" />
     </>
   );
@@ -362,8 +367,11 @@ export function SiteRender({ content: c, template, accent, demo, demoNote }: Pro
     : undefined;
   const hours = c.contact.openingHours ? humanHours(c.contact.openingHours) : undefined;
   const services = c.services.filter((s) => s.name.trim()).slice(0, 10);
-  const cover = c.coverImage && /^https:\/\//.test(c.coverImage) ? c.coverImage : undefined;
-  const gallery = (c.gallery ?? []).filter((u) => /^https:\/\//.test(u)).slice(0, 8);
+  const real = (c.placePhotos ?? []).filter((p) => /^\/api\/places\/photo\?/.test(p.url));
+  const cover = c.coverImage && /^https:\/\//.test(c.coverImage) ? c.coverImage : real[0]?.url;
+  const ownGallery = (c.gallery ?? []).filter((u) => /^https:\/\//.test(u)).slice(0, 8);
+  const gallery = ownGallery.length ? ownGallery : real.slice(1, 5).map((p) => p.url);
+  const credits = !c.coverImage || !ownGallery.length ? [...new Set(real.map((p) => p.author).filter(Boolean))].slice(0, 4) : [];
   const highlights = c.highlights.filter((h) => !AUTO_HL.has(h.title)).slice(0, 4);
   const faq = c.faq.filter((f) => !AUTO_FAQ.has(f.question));
   const aboutHeading = c.heroTitle && c.heroTitle.trim() !== c.businessName.trim() ? c.heroTitle : sec.aboutTitle;
@@ -572,7 +580,7 @@ export function SiteRender({ content: c, template, accent, demo, demoNote }: Pro
           <div className="mark">{c.businessName}</div>
           <div className="meta">
             <span>{[c.contact.address, place].filter(Boolean).join(" · ")}</span>
-            <span>© {new Date().getFullYear()}</span>
+            <span>{credits.length ? `Fotos: ${credits.join(", ")} · Google Maps · ` : ""}© {new Date().getFullYear()}</span>
           </div>
         </div>
       </footer>

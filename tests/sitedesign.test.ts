@@ -99,6 +99,8 @@ describe("AI design: parse, sanitize, check", () => {
     const withImg = fillPlaceholders('<img src="{{IMG:hero}}"><img src="{{IMG:nada}}">', { name: "M", images: { hero: "/api/assets/0f8fad5b-d9cb-469f-a165-70867728950e" } });
     expect(withImg).toContain('src="/api/assets/0f8fad5b-d9cb-469f-a165-70867728950e"');
     expect(withImg).toContain("data:image/svg+xml");
+    const real = fillPlaceholders('<img src="{{IMG:foto-1}}">', { name: "M", images: { "foto-1": "/api/places/photo?n=places%2Fp1%2Fphotos%2FX&w=1600" } });
+    expect(real).toContain('src="/api/places/photo?n=places%2Fp1%2Fphotos%2FX&amp;w=1600"');
   });
 });
 

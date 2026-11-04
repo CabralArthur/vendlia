@@ -43,6 +43,13 @@
       "when": 1793679725868,
       "tag": "0005_auto_reply_on",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793760801204,
+      "tag": "0006_google_rating_photos",
+      "breakpoints": true
     }
   ]
 }

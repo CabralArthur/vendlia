@@ -112,6 +112,9 @@ export async function purgeExpiredSourceData() {
       ),
     );
   if (removable.length) await db.delete(businesses).where(inArray(businesses.id, removable.map((r) => r.id)));
+  // Google content (rating, photos) may be cached for at most 30 days.
+  const expiredIds = ids.filter((id) => !removable.some((r) => r.id === id));
+  if (expiredIds.length) await db.update(businesses).set({ rating: null, ratingCount: null, photos: [] }).where(inArray(businesses.id, expiredIds));
   // For businesses we keep (worked leads), strip the cached payload and keep only place_id.
   await db
     .update(businessSources)

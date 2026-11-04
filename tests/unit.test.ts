@@ -191,3 +191,23 @@ describe("holding reply text", () => {
     expect(holdingText("purchase_intent", new Date("2026-11-08T00:30:00Z"), hours)).toMatch(/na segunda logo cedo/); // Sat 21h30 local
   });
 });
+
+describe("Google rating and photos", () => {
+  it("maps rating, review count and photo references from Places", () => {
+    const [c] = mapGooglePlaces(
+      [{ id: "p1", displayName: { text: "New Ink Tattoo" }, rating: 5, userRatingCount: 301, photos: [{ name: "places/p1/photos/AbC_1", authorAttributions: [{ displayName: "Ana" }] }, { name: "../evil" }] }],
+      { city: "Brasília", state: "DF", segment: "servicos" },
+    );
+    expect(c!.rating).toBe(5);
+    expect(c!.ratingCount).toBe(301);
+    expect(c!.photos).toEqual([{ name: "places/p1/photos/AbC_1", author: "Ana", authorUri: undefined }]);
+  });
+  it("rewards well-reviewed businesses without a site", () => {
+    const base = { websiteStatus: "none_in_source" as const, segment: "barbearia", active: true, phoneE164: "5581999998888" };
+    const plain = scoreLead(base).score;
+    const rated = scoreLead({ ...base, rating: 4.9, ratingCount: 180 });
+    expect(rated.score).toBe(Math.min(100, plain + 14));
+    expect(rated.factors.some((f) => /4,9 ★, 180/.test(f.label))).toBe(true);
+    expect(scoreLead({ ...base, rating: 3, ratingCount: 40 }).score).toBeLessThan(plain);
+  });
+});

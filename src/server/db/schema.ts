@@ -81,6 +81,9 @@ export const WEBSITE_STATUSES = [
 ] as const;
 export type WebsiteStatus = (typeof WEBSITE_STATUSES)[number];
 
+/** A Google Places photo reference (served through /api/places/photo; never stored as a file). */
+export type PlacePhoto = { name: string; author?: string; authorUri?: string };
+
 export const businesses = pgTable(
   "businesses",
   {
@@ -106,6 +109,10 @@ export const businesses = pgTable(
     openingHours: text("opening_hours"),
     description: text("description"),
     services: jsonb("services").$type<string[]>().notNull().default([]),
+    /** Google rating data (cached ≤30 days per Google terms; cleared by the purge job). */
+    rating: doublePrecision("rating"),
+    ratingCount: integer("rating_count"),
+    photos: jsonb("photos").$type<PlacePhoto[]>().notNull().default([]),
     active: boolean("active").notNull().default(true),
     isDemo: boolean("is_demo").notNull().default(false),
     createdAt: createdAt(),
@@ -240,8 +247,10 @@ export type SiteAi = {
   instructions?: string;
   /** Font pairing id chosen by the AI (see src/sites/font-pairings.ts). */
   pairing?: string;
-  /** AI photos by slot: {{IMG:slot}} in the html → /api/assets/<id>. */
+  /** Photos by slot: {{IMG:slot}} in the html → /api/assets/<id> (AI) or /api/places/photo (real). */
   images?: Record<string, string>;
+  /** Authors of the real (Google) photos used, shown as credit on the site. */
+  photoCredits?: string[];
 };
 
 export type SiteLogo = {
@@ -284,6 +293,8 @@ export type SiteContent = {
   coverImage?: string;
   /** Optional extra photos (https URLs) supplied by the operator. */
   gallery?: string[];
+  /** Real photos of the business from Google Places (proxied), used by the template when there's no cover. */
+  placePhotos?: { url: string; author?: string }[];
   /** When present, the site is rendered from this AI design instead of the template. */
   ai?: SiteAi;
   /** Optional AI logo proposals; when use=true the chosen one replaces the name in header/footer. */

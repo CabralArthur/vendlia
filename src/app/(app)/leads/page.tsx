@@ -5,7 +5,7 @@ import { db, leads, businesses, LEAD_STAGES, type LeadStage } from "@/server/db"
 import { Card, Empty, PageHeader, ScorePill, StageBadge, STAGE_LABEL, Badge } from "@/components/ui";
 import { SelectAll } from "@/components/select-all";
 import { nextStep } from "@/lib/labels";
-import { Search, Radar, Sparkles, Send, X, Trash2, RotateCcw } from "lucide-react";
+import { Search, Radar, Sparkles, Send, X, Trash2, RotateCcw, Star, MapPin, LayoutGrid, Rows3, MessageCircle, AtSign, ArrowUpRight } from "lucide-react";
 import { Flash } from "@/components/flash";
 import { Submit } from "@/components/submit";
 import { SEGMENTS, segmentById } from "@/server/discovery/segments";
@@ -22,7 +22,24 @@ const WEB_LABEL: Record<string, [string, "green" | "amber" | "red" | "neutral" |
   unknown: ["A verificar", "neutral"],
 };
 
-type SP = { q?: string; stage?: string; segment?: string; city?: string; min?: string; web?: string; page?: string; ok?: string; err?: string };
+type SP = { q?: string; stage?: string; segment?: string; city?: string; min?: string; web?: string; wa?: string; rated?: string; sort?: string; view?: string; page?: string; ok?: string; err?: string };
+
+const SORTS: Record<string, string> = { score: "Oportunidade", reviews: "Mais avaliações", rating: "Melhor nota", recent: "Mais recentes" };
+
+function photoUrl(name: string, w = 640) {
+  return `/api/places/photo?n=${encodeURIComponent(name)}&w=${w}`;
+}
+
+function Stars({ rating, count }: { rating: number | null; count: number | null }) {
+  if (!rating || !count) return null;
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 text-[0.8125rem] font-semibold tabular-nums">
+      <Star size={13} className="fill-[#f5b301] text-[#f5b301]" aria-hidden />
+      {rating.toFixed(1).replace(".", ",")}
+      <span className="muted font-normal">({count.toLocaleString("pt-BR")})</span>
+    </span>
+  );
+}
 
 export default async function LeadsPage({ searchParams }: { searchParams: Promise<SP> }) {
   const s = await requireSession();
@@ -38,15 +55,29 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   if (sp.city) where.push(ilike(businesses.city, `%${sp.city}%`));
   if (sp.min) where.push(gte(leads.score, Number(sp.min)));
   if (sp.web === "nosite") where.push(sql`${businesses.websiteStatus} in ('none_in_source','social_only','confirmed_absent')`);
+  if (sp.wa) where.push(sql`length(${businesses.phoneE164}) = 13 and substring(${businesses.phoneE164}, 5, 1) = '9' and not exists (select 1 from contact_points cp where cp.business_id = ${businesses.id} and cp.channel = 'whatsapp' and cp.wa_exists = false)`);
+  if (sp.rated) where.push(sql`${businesses.rating} >= 4.5 and ${businesses.ratingCount} >= 30`);
+  const sort = sp.sort && SORTS[sp.sort] ? sp.sort : "score";
+  const order =
+    sort === "reviews" ? [sql`${businesses.ratingCount} desc nulls last`, desc(leads.score)]
+    : sort === "rating" ? [sql`${businesses.rating} desc nulls last`, sql`${businesses.ratingCount} desc nulls last`]
+    : sort === "recent" ? [desc(leads.createdAt)]
+    : [desc(leads.score), desc(leads.updatedAt)];
+  const view = sp.view === "table" ? "table" : "cards";
   if (sp.q) where.push(or(ilike(businesses.name, `%${sp.q}%`), ilike(businesses.phoneE164, `%${sp.q.replace(/\D/g, "") || "~"}%`), ilike(businesses.neighborhood, `%${sp.q}%`))!);
 
   const [rows, [{ n }]] = await Promise.all([
     db
-      .select({ lead: leads, b: businesses, siteId: sql<string | null>`(select id from websites w where w.lead_id = ${leads.id} order by created_at desc limit 1)` })
+      .select({
+        lead: leads,
+        b: businesses,
+        siteId: sql<string | null>`(select id from websites w where w.lead_id = ${leads.id} order by created_at desc limit 1)`,
+        waExists: sql<boolean | null>`(select wa_exists from contact_points cp where cp.business_id = ${businesses.id} and cp.channel = 'whatsapp' limit 1)`,
+      })
       .from(leads)
       .innerJoin(businesses, eq(businesses.id, leads.businessId))
       .where(and(...where))
-      .orderBy(desc(leads.score), desc(leads.updatedAt))
+      .orderBy(...order)
       .limit(per)
       .offset((page - 1) * per),
     db.select({ n: sql<number>`count(*)::int` }).from(leads).innerJoin(businesses, eq(businesses.id, leads.businessId)).where(and(...where)) as unknown as Promise<[{ n: number }]>,
@@ -56,7 +87,16 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     return `/leads?${p}`;
   };
   const back = qs({});
-  const filtered = !!(sp.q || sp.stage || sp.segment || sp.city || sp.web || sp.min);
+  const filtered = !!(sp.q || sp.stage || sp.segment || sp.city || sp.web || sp.min || sp.wa || sp.rated);
+  const chip = (on: boolean, patch: Partial<SP>, label: string) => (
+    <Link
+      href={qs({ ...patch, page: undefined })}
+      className={`inline-flex items-center rounded-full px-3 py-1 text-[0.8125rem] font-medium ring-1 ring-inset transition-colors ${on ? "bg-[var(--ink)] text-[var(--surface)] ring-[var(--ink)]" : "bg-[var(--surface)] text-[var(--ink)] ring-[var(--line)] hover:ring-[var(--line-strong)]"}`}
+      aria-pressed={on}
+    >
+      {label}
+    </Link>
+  );
 
   return (
     <>
@@ -87,7 +127,28 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         </select>
         <button className="btn btn-secondary">Filtrar</button>
         {filtered ? <Link href="/leads" className="btn btn-quiet"><X size={15} /> Limpar</Link> : <span className="hidden lg:block" />}
+        {sp.sort && <input type="hidden" name="sort" value={sp.sort} />}
+        {sp.view && <input type="hidden" name="view" value={sp.view} />}
+        {sp.wa && <input type="hidden" name="wa" value={sp.wa} />}
+        {sp.rated && <input type="hidden" name="rated" value={sp.rated} />}
       </form>
+
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {chip(sp.web === "nosite", { web: sp.web === "nosite" ? undefined : "nosite" }, "Sem site")}
+        {chip(!!sp.wa, { wa: sp.wa ? undefined : "1" }, "Com WhatsApp")}
+        {chip(!!sp.rated, { rated: sp.rated ? undefined : "1" }, "Bem avaliadas (4,5+)")}
+        <div className="ml-auto flex items-center gap-2">
+          <span className="muted text-[0.8125rem]">Ordenar:</span>
+          <nav className="flex flex-wrap gap-1" aria-label="Ordenar">
+            {Object.entries(SORTS).map(([k, label]) => (
+              <Link key={k} href={qs({ sort: k === "score" ? undefined : k, page: undefined })} className={`rounded-md px-2 py-1 text-[0.8125rem] ${sort === k ? "bg-[var(--surface-2)] font-semibold text-[var(--ink)]" : "muted hover:text-[var(--ink)]"}`}>{label}</Link>
+            ))}
+          </nav>
+          <span className="mx-1 h-5 w-px bg-[var(--line)]" aria-hidden />
+          <Link href={qs({ view: undefined })} aria-label="Ver em cards" aria-pressed={view === "cards"} className={`rounded-md p-1.5 ${view === "cards" ? "bg-[var(--surface-2)] text-[var(--ink)]" : "muted"}`}><LayoutGrid size={16} /></Link>
+          <Link href={qs({ view: "table" })} aria-label="Ver em tabela" aria-pressed={view === "table"} className={`rounded-md p-1.5 ${view === "table" ? "bg-[var(--surface-2)] text-[var(--ink)]" : "muted"}`}><Rows3 size={16} /></Link>
+        </div>
+      </div>
 
       {rows.length === 0 ? (
         filtered ? (
@@ -104,6 +165,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           <input type="hidden" name="back" value={back} />
           <Card flush className="overflow-hidden">
             <div className="flex flex-wrap items-center gap-2 border-b border-[var(--line)] px-4 py-2.5">
+              {view === "cards" && (
+                <label className="mr-2 inline-flex items-center gap-2 text-[0.8125rem] font-medium"><SelectAll /> Selecionar todos</label>
+              )}
               <span className="muted mr-1 text-[0.8125rem]">Com os selecionados:</span>
               {sp.stage === "discarded" ? (
                 <Submit name="op" value="restore" className="btn btn-secondary btn-sm" pendingText="Restaurando…"><RotateCcw size={14} /> Voltar para a lista</Submit>
@@ -119,6 +183,64 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
                 </>
               )}
             </div>
+            {view === "cards" ? (
+              <ul className="grid gap-4 bg-[var(--surface-2)] p-4 sm:grid-cols-2 xl:grid-cols-3">
+                {rows.map(({ lead, b, siteId, waExists }) => {
+                  const w = WEB_LABEL[b.websiteStatus]!;
+                  const photo = b.photos?.[0];
+                  const mobile = !!b.phoneE164 && isBrMobile(b.phoneE164);
+                  const place = [b.neighborhood, b.city].filter(Boolean).join(", ");
+                  const maps = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([b.name, b.address ?? place].filter(Boolean).join(" "))}`;
+                  return (
+                    <li key={lead.id} className="group flex flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--line)] bg-[var(--surface)] shadow-[0_1px_2px_rgba(16,24,40,.04)] transition-shadow hover:shadow-[0_8px_24px_-12px_rgba(16,24,40,.25)] has-[:checked]:ring-2 has-[:checked]:ring-[var(--ink)]">
+                      <div className="relative aspect-[16/9] overflow-hidden bg-[var(--surface-2)]">
+                        {photo ? (
+                          <>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={photoUrl(photo.name)} alt={`Foto de ${b.name}`} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
+                            {photo.author && <span className="absolute right-2 bottom-1.5 max-w-[70%] truncate rounded bg-black/45 px-1.5 py-0.5 text-[0.625rem] text-white/90">Foto: {photo.author} · Google</span>}
+                          </>
+                        ) : (
+                          <div className="grid h-full w-full place-items-center bg-[linear-gradient(135deg,var(--surface-2),var(--line))]">
+                            <span className="text-4xl font-semibold text-[var(--muted)] opacity-60">{b.name.slice(0, 1).toUpperCase()}</span>
+                          </div>
+                        )}
+                        <label className="absolute top-2 left-2 grid h-8 w-8 cursor-pointer place-items-center rounded-md bg-white/95 shadow-sm">
+                          <input type="checkbox" name="ids" value={lead.id} aria-label={`Selecionar ${b.name}`} />
+                        </label>
+                        <span className="absolute top-2 right-2 rounded-md bg-white/95 px-2 py-1 shadow-sm"><ScorePill score={lead.score} /></span>
+                      </div>
+                      <div className="flex flex-1 flex-col gap-2 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <Link href={`/leads/${lead.id}`} className="line-clamp-2 font-semibold leading-snug hover:underline">{b.name}</Link>
+                          <Stars rating={b.rating} count={b.ratingCount} />
+                        </div>
+                        <div className="text-[0.6875rem] font-semibold tracking-[0.08em] text-[var(--muted)] uppercase">{b.category ?? segmentById(b.segment).label}</div>
+                        {(b.address || place) && (
+                          <div className="muted flex gap-1.5 text-[0.8125rem] leading-snug"><MapPin size={14} className="mt-0.5 shrink-0" aria-hidden /><span className="line-clamp-2">{b.address ?? place}</span></div>
+                        )}
+                        <div className="text-[0.8125rem] tabular-nums">
+                          {b.phoneE164 ? (mobile ? formatBrPhone(b.phoneE164) : <span className="muted">{formatBrPhone(b.phoneE164)} (fixo)</span>) : <span className="subtle">Sem telefone</span>}
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          <Badge tone={w[1]}>{b.websiteStatus === "has_website" ? "Já tem site" : b.websiteStatus === "social_only" ? "Só redes sociais" : "Sem site"}</Badge>
+                          {mobile && waExists !== false && <Badge tone={waExists ? "green" : "neutral"}><MessageCircle size={11} className="mr-1 inline" />{waExists ? "WhatsApp verificado" : "WhatsApp provável"}</Badge>}
+                          {b.instagram && <Badge tone="neutral"><AtSign size={11} className="mr-0.5 inline" />{b.instagram}</Badge>}
+                          {lead.stage !== "discovered" && lead.stage !== "qualified" && <StageBadge stage={lead.stage} />}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 border-t border-[var(--line)] px-4 py-2.5 text-[0.8125rem]">
+                        <span className="muted truncate">{nextStep({ stage: lead.stage, websiteStatus: b.websiteStatus, hasPhone: !!b.phoneE164, hasSite: !!siteId, active: b.active })}</span>
+                        <span className="flex shrink-0 items-center gap-3">
+                          <a href={maps} target="_blank" rel="noreferrer" className="muted inline-flex items-center gap-0.5 hover:text-[var(--ink)]">Maps <ArrowUpRight size={13} /></a>
+                          <Link href={`/leads/${lead.id}`} className="font-semibold hover:underline">Abrir</Link>
+                        </span>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
             <div className="scroll-thin overflow-x-auto">
               <table className="table min-w-[880px]">
                 <thead>
@@ -155,6 +277,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
                 </tbody>
               </table>
             </div>
+            )}
           </Card>
         </form>
       )}

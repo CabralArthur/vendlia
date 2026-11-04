@@ -25,6 +25,9 @@ export type Candidate = {
   lng?: number;
   openingHours?: string;
   active?: boolean;
+  rating?: number;
+  ratingCount?: number;
+  photos?: { name: string; author?: string; authorUri?: string }[];
 };
 
 export type LogFn = (msg: string, level?: "info" | "ok" | "warn" | "error") => void | Promise<void>;
@@ -248,6 +251,11 @@ const placeSchema = z.object({
   location: z.object({ latitude: z.number(), longitude: z.number() }).optional(),
   regularOpeningHours: z.object({ weekdayDescriptions: z.array(z.string()).optional() }).optional(),
   primaryTypeDisplayName: z.object({ text: z.string() }).optional(),
+  rating: z.number().optional(),
+  userRatingCount: z.number().optional(),
+  photos: z
+    .array(z.object({ name: z.string(), authorAttributions: z.array(z.object({ displayName: z.string().optional(), uri: z.string().optional() })).optional() }))
+    .optional(),
 });
 
 export function mapGooglePlaces(places: unknown[], p: DiscoveryParams): Candidate[] {
@@ -276,6 +284,12 @@ export function mapGooglePlaces(places: unknown[], p: DiscoveryParams): Candidat
       lng: pl.location?.longitude,
       openingHours: pl.regularOpeningHours?.weekdayDescriptions?.join("; "),
       active: pl.businessStatus ? pl.businessStatus === "OPERATIONAL" : true,
+      rating: pl.rating,
+      ratingCount: pl.userRatingCount,
+      photos: (pl.photos ?? [])
+        .filter((ph) => /^places\/[\w-]+\/photos\/[\w-]+$/.test(ph.name))
+        .slice(0, 8)
+        .map((ph) => ({ name: ph.name, author: ph.authorAttributions?.[0]?.displayName, authorUri: ph.authorAttributions?.[0]?.uri })),
     });
   }
   return out;
@@ -298,7 +312,7 @@ export async function fetchGooglePlaces(p: DiscoveryParams, fetchImpl: typeof fe
         "Content-Type": "application/json",
         "X-Goog-Api-Key": key,
         "X-Goog-FieldMask":
-          "places.id,places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.businessStatus,places.location,places.regularOpeningHours.weekdayDescriptions,places.primaryTypeDisplayName,nextPageToken",
+          "places.id,places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.businessStatus,places.location,places.regularOpeningHours.weekdayDescriptions,places.primaryTypeDisplayName,places.rating,places.userRatingCount,places.photos,nextPageToken",
       },
       body: JSON.stringify({
         textQuery: `${seg.googleQuery} em ${p.neighborhood?.trim() ? `${p.neighborhood.trim()}, ` : ""}${p.city}, ${p.state}`,
